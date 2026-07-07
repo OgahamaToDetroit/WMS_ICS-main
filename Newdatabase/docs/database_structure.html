@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>โครงสร้าง Database คลังสินค้า — คู่มืออธิบายทุกตารางทุกคอลัมน์</title>
+<style>
+  :root{
+    --bg:#0f1419; --card:#1a212b; --card2:#212a36; --line:#2d3a48;
+    --text:#e6edf3; --muted:#8b98a5; --accent:#4fb3ff; --accent2:#7ee787;
+    --pk:#f0883e; --fk:#a371f7; --null:#8b98a5; --req:#3fb950;
+    --warn:#f85149; --chip:#2d3a48;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:"Segoe UI","Sarabun",Tahoma,sans-serif;
+    line-height:1.65; padding:0 0 80px;
+  }
+  header{
+    background:linear-gradient(135deg,#182430,#0f1419);
+    border-bottom:1px solid var(--line); padding:32px 24px; text-align:center;
+  }
+  header h1{margin:0 0 8px; font-size:26px}
+  header p{margin:0; color:var(--muted); font-size:15px}
+  .wrap{max-width:980px; margin:0 auto; padding:0 20px}
+  h2{
+    font-size:21px; margin:38px 0 4px; padding-top:12px;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  }
+  h2 .tblname{
+    font-family:"Consolas",monospace; font-size:15px; color:var(--accent);
+    background:var(--card2); padding:3px 10px; border-radius:6px; border:1px solid var(--line);
+  }
+  h2 .count{font-size:13px; color:var(--muted); font-weight:normal}
+  .tdesc{color:var(--muted); margin:2px 0 14px; font-size:14.5px}
+  table{
+    width:100%; border-collapse:collapse; background:var(--card);
+    border:1px solid var(--line); border-radius:10px; overflow:hidden; font-size:14px;
+  }
+  th,td{padding:11px 13px; text-align:left; vertical-align:top; border-bottom:1px solid var(--line)}
+  th{background:var(--card2); color:var(--muted); font-weight:600; font-size:12.5px; letter-spacing:.3px; text-transform:uppercase}
+  tr:last-child td{border-bottom:none}
+  td.col{font-family:"Consolas",monospace; color:var(--text); white-space:nowrap; font-size:13.5px}
+  td.type{font-family:"Consolas",monospace; color:var(--accent2); white-space:nowrap; font-size:12.5px}
+  .badge{
+    display:inline-block; font-size:10.5px; font-weight:700; padding:2px 7px;
+    border-radius:20px; margin-left:5px; vertical-align:middle; letter-spacing:.3px;
+  }
+  .b-pk{background:rgba(240,136,62,.16); color:var(--pk); border:1px solid rgba(240,136,62,.4)}
+  .b-fk{background:rgba(163,113,247,.16); color:var(--fk); border:1px solid rgba(163,113,247,.4)}
+  .b-uq{background:rgba(79,179,255,.14); color:var(--accent); border:1px solid rgba(79,179,255,.35)}
+  .b-null{background:rgba(139,152,165,.14); color:var(--null); border:1px solid rgba(139,152,165,.35)}
+  .b-req{background:rgba(63,185,80,.14); color:var(--req); border:1px solid rgba(63,185,80,.35)}
+  .b-auto{background:rgba(126,231,135,.12); color:var(--accent2); border:1px solid rgba(126,231,135,.3)}
+  .note{color:var(--muted); font-size:13px}
+  .note b{color:var(--text)}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 20px; margin:14px 0}
+  .legend{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px 22px; margin-top:8px}
+  .legend div{font-size:13.5px; color:var(--muted)}
+  .diagram{
+    font-family:"Consolas",monospace; font-size:13px; background:var(--card2);
+    border:1px solid var(--line); border-radius:10px; padding:18px 20px; color:var(--muted);
+    white-space:pre; overflow-x:auto; line-height:1.5;
+  }
+  .diagram b{color:var(--accent)}
+  .concept{border-left:3px solid var(--accent); padding:2px 0 2px 16px; margin:16px 0}
+  .concept h4{margin:0 0 4px; font-size:15px; color:var(--text)}
+  .concept p{margin:0; color:var(--muted); font-size:13.5px}
+  code{font-family:"Consolas",monospace; background:var(--card2); padding:1px 6px; border-radius:4px; color:var(--accent2); font-size:12.5px}
+  .warnbox{border-left-color:var(--warn)}
+  .warnbox h4{color:var(--warn)}
+  footer{text-align:center; color:var(--muted); font-size:12.5px; margin-top:40px; padding-top:16px; border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🗄️ โครงสร้าง Database คลังสินค้า</h1>
+  <p>คู่มืออธิบายทุกตาราง ทุกคอลัมน์ พร้อมชนิดข้อมูล — สร้างจาก <code>prisma/schema.prisma</code> ฉบับปัจจุบัน (6 ตาราง)</p>
+</header>
+
+<div class="wrap">
+
+  <!-- ภาพรวมความสัมพันธ์ -->
+  <h2>🔭 ภาพรวม — ตารางเชื่อมกันยังไง</h2>
+  <p class="tdesc">หัวใจคือ <code>stock_transactions</code> (สมุดบัญชีเคลื่อนไหว) ตารางอื่นเป็น "บริบท" ที่ชี้เข้าหามัน — เส้น <b>→</b> คือ Foreign Key (ชี้ไปหาตารางอื่น)</p>
+  <div class="diagram"><b>item_groups</b> (กลุ่มสินค้า 23)
+     └─ <b>items</b> (สินค้า 2,382)
+           └─ <b>stock_transactions</b> (เคลื่อนไหว 579)  ◄── หัวใจของระบบ
+                   │
+                   ├─ document_id ──► <b>stock_documents</b> (หัวใบเอกสาร — เริ่มว่าง)
+                   │                        ├─ created_by / requested_by / resolved_by ──► <b>users</b>
+                   │                        └─ 1 ใบ ─ n ─► <b>stock_request_items</b> (รายการที่ขอเบิก — เริ่มว่าง)
+                   │                                            └─ item_id ──► <b>items</b>
+                   └─ created_by ─────────────────────────► <b>users</b> (คนคลัง + ผู้ขอเบิก มีคอลัมน์ role — เริ่มว่าง)</div>
+
+  <!-- คำอธิบายชนิดข้อมูล -->
+  <h2>📖 ชนิดข้อมูล &amp; สัญลักษณ์ (อ่านก่อน)</h2>
+  <div class="card">
+    <div class="legend">
+      <div><code>String</code> = ข้อความ (SQLite เก็บเป็น TEXT)</div>
+      <div><code>Int</code> = จำนวนเต็ม เช่น 1, 42</div>
+      <div><code>Float</code> = เลขทศนิยม เช่น 10.5</div>
+      <div><code>Boolean</code> = จริง/เท็จ (true/false)</div>
+      <div><code>DateTime</code> = วันที่ + เวลา</div>
+      <div><code>?</code> ต่อท้ายชนิด = <b>ว่างได้ (NULL)</b></div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+    <div class="legend">
+      <div><span class="badge b-pk">PK</span> Primary Key — บัตรประชาชนของแถว ห้ามซ้ำ</div>
+      <div><span class="badge b-fk">FK</span> Foreign Key — ชี้ไปหาแถวในตารางอื่น</div>
+      <div><span class="badge b-uq">UNIQUE</span> ห้ามมีค่าซ้ำในตาราง</div>
+      <div><span class="badge b-req">ต้องมี</span> ห้ามเว้นว่าง</div>
+      <div><span class="badge b-null">ว่างได้</span> เว้นว่าง (NULL) ได้</div>
+      <div><span class="badge b-auto">อัตโนมัติ</span> database ใส่ให้เอง ไม่ต้องกรอก</div>
+    </div>
+  </div>
+
+  <!-- 1. item_groups -->
+  <h2>1. กลุ่มสินค้า <span class="tblname">item_groups</span> <span class="count">23 แถว · มีข้อมูลแล้ว</span></h2>
+  <p class="tdesc">สารบัญหมวดหมู่สินค้า มาจากชีต Group Data เดิม — 2 ตัวแรกของรหัสสินค้าคือรหัสกลุ่มนี้</p>
+  <table>
+    <tr><th>คอลัมน์</th><th>ชนิด</th><th>คีย์/เงื่อนไข</th><th>หน้าที่</th></tr>
+    <tr><td class="col">group_id</td><td class="type">String</td><td><span class="badge b-pk">PK</span></td><td class="note">รหัสกลุ่ม 2 หลัก เช่น <code>"01"</code> — เก็บเป็นข้อความกันเลข 0 นำหน้าหาย</td></tr>
+    <tr><td class="col">group_name</td><td class="type">String</td><td><span class="badge b-req">ต้องมี</span></td><td class="note">ชื่อกลุ่มสินค้า</td></tr>
+    <tr><td class="col">detail</td><td class="type">String?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">คำอธิบายเพิ่มเติมของกลุ่ม</td></tr>
+  </table>
+
+  <!-- 2. items -->
+  <h2>2. ทะเบียนสินค้า <span class="tblname">items</span> <span class="count">2,382 แถว · มีข้อมูลแล้ว</span></h2>
+  <p class="tdesc">master สินค้า — หัวใจของ "ของมีอะไรบ้าง" มาจากชีต Database เดิม</p>
+  <table>
+    <tr><th>คอลัมน์</th><th>ชนิด</th><th>คีย์/เงื่อนไข</th><th>หน้าที่</th></tr>
+    <tr><td class="col">item_id</td><td class="type">String</td><td><span class="badge b-pk">PK</span></td><td class="note">รหัส 5 หลัก เช่น <code>"02001"</code> (2 ตัวแรก=กลุ่ม, 3 ตัวหลัง=ลำดับ) — <b>ห้าม reuse ตลอดกาล</b> เพราะป้าย QR จริงติดของอยู่</td></tr>
+    <tr><td class="col">name</td><td class="type">String</td><td><span class="badge b-req">ต้องมี</span></td><td class="note">ชื่อสินค้า</td></tr>
+    <tr><td class="col">unit</td><td class="type">String?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">หน่วยนับ เช่น ชิ้น, เมตร, กล่อง</td></tr>
+    <tr><td class="col">group_id</td><td class="type">String</td><td><span class="badge b-fk">FK</span> → item_groups</td><td class="note">สินค้านี้อยู่กลุ่มไหน</td></tr>
+    <tr><td class="col">latest_cost</td><td class="type">Float?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">ราคาล่าสุด — <b>NULL = ไม่รู้ราคา ไม่ใช่ 0 บาท</b> (ว่างจริง 745 รายการ) แอปห้ามแสดงเป็น 0</td></tr>
+    <tr><td class="col">is_asset</td><td class="type">Boolean</td><td><span class="badge b-auto">default: false</span></td><td class="note">เป็นทรัพย์สินถาวรไหม (ไม่ใช่วัสดุสิ้นเปลือง)</td></tr>
+    <tr><td class="col">storage_type</td><td class="type">String?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">รูปแบบการจัดเก็บ</td></tr>
+    <tr><td class="col">vendor</td><td class="type">String?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">ร้านค้า (เป็นข้อความลอย ๆ — ข้อจำกัดที่รู้กันอยู่ ยังไม่แยกตาราง)</td></tr>
+    <tr><td class="col">note</td><td class="type">String?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">หมายเหตุ</td></tr>
+    <tr><td class="col">is_active</td><td class="type">Boolean</td><td><span class="badge b-auto">default: true</span></td><td class="note"><b>soft delete</b> — "ลบ" สินค้า = ตั้ง <code>false</code> แล้วซ่อน ห้ามลบแถวจริง (ประวัติยังชี้อยู่ + รหัสห้ามนำกลับมาใช้)</td></tr>
+    <tr><td class="col">created_at</td><td class="type">DateTime</td><td><span class="badge b-auto">อัตโนมัติ</span></td><td class="note">เวลาสร้างแถว — database ใส่ให้เอง (<code>now()</code>)</td></tr>
+    <tr><td class="col">updated_at</td><td class="type">DateTime</td><td><span class="badge b-auto">อัตโนมัติ</span></td><td class="note">เวลาแก้แถวล่าสุด — Prisma อัปเดตให้เองทุกครั้งที่แก้ (<code>@updatedAt</code>)</td></tr>
+  </table>
+
+  <!-- 3. users -->
+  <h2>3. ทะเบียนคนคลัง + ผู้ขอเบิก <span class="tblname">users</span> <span class="count">เริ่มว่าง · ตารางใหม่</span></h2>
+  <p class="tdesc">รายชื่อคนที่เกี่ยวข้องกับคลัง แยกด้วยคอลัมน์ <code>role</code> เป็นคนคลัง (STAFF) กับผู้ขอเบิก (REQUESTER) — <b>เป็น "ทะเบียนตัวตน" ยังไม่ใช่ระบบ login</b> (repo web จะเติมคอลัมน์รหัสผ่านเองทีหลัง)</p>
+  <table>
+    <tr><th>คอลัมน์</th><th>ชนิด</th><th>คีย์/เงื่อนไข</th><th>หน้าที่</th></tr>
+    <tr><td class="col">id</td><td class="type">Int</td><td><span class="badge b-pk">PK</span> <span class="badge b-auto">เลขรันอัตโนมัติ</span></td><td class="note">เลขประจำตัว database ออกให้เอง (1, 2, 3, …)</td></tr>
+    <tr><td class="col">name</td><td class="type">String</td><td><span class="badge b-req">ต้องมี</span></td><td class="note">ชื่อคน</td></tr>
+    <tr><td class="col">role</td><td class="type">String</td><td><span class="badge b-auto">default: STAFF</span></td><td class="note"><code>STAFF</code> (คนคลัง — ยืนยัน/ยกเลิกคำขอได้) หรือ <code>REQUESTER</code> (ผู้ขอเบิก) — enum จำลอง แอปคุมค่าเอง ผู้ขอเบิกต้องมี account จริงในตารางนี้ ไม่ใช่แค่กรอกชื่อลอย ๆ</td></tr>
+    <tr><td class="col">is_active</td><td class="type">Boolean</td><td><span class="badge b-auto">default: true</span></td><td class="note">soft delete — คนลาออกตั้ง <code>false</code> ห้ามลบแถว เพราะประวัติเก่ายังชี้มาที่เขา</td></tr>
+  </table>
+  <p class="note" style="margin-top:8px">💡 ในไฟล์ schema มีคอมเมนต์ทิ้งไว้ว่าอนาคตจะเพิ่ม <code>username</code> + <code>password_hash</code> (ผลเข้ารหัสทางเดียวด้วย bcrypt — <b>ไม่ใช่รหัสผ่านจริง</b>) ตอนทำ login</p>
+
+  <!-- 4. stock_documents -->
+  <h2>4. หัวใบเอกสาร <span class="tblname">stock_documents</span> <span class="count">เริ่มว่าง · ตารางใหม่</span></h2>
+  <p class="tdesc">ตาราง "แม่" ของแบบ header–detail: 1 ใบเบิก/ใบรับ = หลายบรรทัดใน stock_transactions (เหมือนใบเสร็จ 1 ใบมีสินค้าหลายรายการ)</p>
+  <table>
+    <tr><th>คอลัมน์</th><th>ชนิด</th><th>คีย์/เงื่อนไข</th><th>หน้าที่</th></tr>
+    <tr><td class="col">id</td><td class="type">Int</td><td><span class="badge b-pk">PK</span> <span class="badge b-auto">เลขรันอัตโนมัติ</span></td><td class="note">กุญแจภายในให้ database เชื่อมตาราง</td></tr>
+    <tr><td class="col">doc_no</td><td class="type">String</td><td><span class="badge b-uq">UNIQUE</span></td><td class="note">เลขที่ใบที่คนอ่าน เช่น <code>ISS-6907-0001</code> — แอปเป็นคนออกเลข database บังคับห้ามซ้ำ</td></tr>
+    <tr><td class="col">doc_type</td><td class="type">String</td><td><span class="badge b-req">ต้องมี</span></td><td class="note"><code>RECEIVE</code> (ใบรับเข้า) หรือ <code>ISSUE</code> (ใบเบิกออก) — SQLite ไม่มี enum แอปต้องคุมค่าเอง</td></tr>
+    <tr><td class="col">doc_date</td><td class="type">DateTime</td><td><span class="badge b-req">ต้องมี</span></td><td class="note">วันที่ทางธุรกิจของใบ — RECEIVE/ใบตรง: copy ลง <code>transaction_date</code> ของลูกทุกแถว · ISSUE ผ่านคำขอ: ลูกเกิดตอนยืนยัน <code>transaction_date</code> = วันที่ยืนยัน (ไม่ใช่วันที่ขอ)</td></tr>
+    <tr><td class="col">status</td><td class="type">String</td><td><span class="badge b-req">ต้องมี</span></td><td class="note"><code>PENDING</code> · <code>CONFIRMED</code> · <code>CANCELLED</code> — <b>ไม่มี default โดยตั้งใจ</b> บังคับแอประบุทุกครั้ง (RECEIVE→CONFIRMED, ISSUE→PENDING เสมอ) ดู flow ข้อ 6</td></tr>
+    <tr><td class="col">note</td><td class="type">String?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">หมายเหตุระดับใบ — ใช้เก็บเหตุผลตอนยกเลิกได้ด้วย</td></tr>
+    <tr><td class="col">requested_by</td><td class="type">Int?</td><td><span class="badge b-fk">FK</span> → users <span class="badge b-null">ว่างได้</span></td><td class="note">ผู้ขอเบิก (role=REQUESTER) — <b>ใบ ISSUE บังคับมีเสมอ</b>, ใบ RECEIVE = NULL เสมอ (แอปคุม)</td></tr>
+    <tr><td class="col">resolved_by</td><td class="type">Int?</td><td><span class="badge b-fk">FK</span> → users <span class="badge b-null">ว่างได้</span></td><td class="note">คนปิดคำขอ (ยืนยัน/ยกเลิก) — <b>ต้อง role=STAFF</b> NULL ตราบใดที่ยัง PENDING</td></tr>
+    <tr><td class="col">resolved_at</td><td class="type">DateTime?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">เวลาปิดคำขอ — NULL ตราบใดที่ยัง PENDING</td></tr>
+    <tr><td class="col">created_by</td><td class="type">Int?</td><td><span class="badge b-fk">FK</span> → users <span class="badge b-null">ว่างได้</span></td><td class="note">ใครสร้างใบ — NULL ได้จนกว่าจะมีระบบ login</td></tr>
+    <tr><td class="col">created_at</td><td class="type">DateTime</td><td><span class="badge b-auto">อัตโนมัติ</span></td><td class="note">เวลาบันทึกใบเข้าระบบ (<code>now()</code>)</td></tr>
+  </table>
+  <p class="note" style="margin-top:8px">💡 <code>users</code> โยงเข้าตารางนี้ 3 ทาง (creator/requester/resolver) — ใน Prisma จึงต้องตั้งชื่อ relation กำกับ เป็นเหตุผลทางเทคนิคล้วน ๆ</p>
+
+  <!-- 5. stock_request_items -->
+  <h2>5. รายการที่ขอเบิก <span class="tblname">stock_request_items</span> <span class="count">เริ่มว่าง · ตารางใหม่</span></h2>
+  <p class="tdesc">ลูกของใบ <code>ISSUE</code> ที่ยัง <code>PENDING</code> — พัก "ขออะไร กี่ชิ้น" ไว้ที่นี่ก่อน <b>ยังไม่แตะยอดคงเหลือ</b> จนกว่าคนคลังจะกดยืนยัน</p>
+  <table>
+    <tr><th>คอลัมน์</th><th>ชนิด</th><th>คีย์/เงื่อนไข</th><th>หน้าที่</th></tr>
+    <tr><td class="col">id</td><td class="type">Int</td><td><span class="badge b-pk">PK</span> <span class="badge b-auto">เลขรันอัตโนมัติ</span></td><td class="note">เลขลำดับบรรทัดที่ขอ</td></tr>
+    <tr><td class="col">document_id</td><td class="type">Int</td><td><span class="badge b-fk">FK</span> → stock_documents</td><td class="note">อยู่ในใบขอเบิกใบไหน</td></tr>
+    <tr><td class="col">item_id</td><td class="type">String</td><td><span class="badge b-fk">FK</span> → items</td><td class="note">ขอสินค้าตัวไหน</td></tr>
+    <tr><td class="col">qty_requested</td><td class="type">Float</td><td><span class="badge b-req">ต้องมี</span></td><td class="note">จำนวนที่ผู้เบิกกรอกตอนกดขอ — <b>เก็บถาวร ห้ามแก้ทับ</b> (อ้างอิงคำขอเดิมได้)</td></tr>
+    <tr><td class="col">qty_confirmed</td><td class="type">Float?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">จำนวนที่คนคลังให้จริงตอนยืนยัน — NULL จนกว่าจะยืนยัน (ให้ไม่ครบตามขอได้)</td></tr>
+    <tr><td class="col">note</td><td class="type">String?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">หมายเหตุระดับบรรทัด</td></tr>
+  </table>
+
+  <!-- 6. stock_transactions -->
+  <h2>6. สมุดบัญชีเคลื่อนไหวสต็อก <span class="tblname">stock_transactions</span> <span class="count">579 แถว · หัวใจของระบบ</span></h2>
+  <p class="tdesc">ทุกการรับเข้า/เบิกออก/ยอดยกมา/ปรับยอด = 1 แถวที่นี่ — <b>ยอดคงเหลือ = SUM(qty_change) ต่อสินค้า</b> ไม่มีคอลัมน์เก็บยอดที่อื่น</p>
+  <table>
+    <tr><th>คอลัมน์</th><th>ชนิด</th><th>คีย์/เงื่อนไข</th><th>หน้าที่</th></tr>
+    <tr><td class="col">id</td><td class="type">Int</td><td><span class="badge b-pk">PK</span> <span class="badge b-auto">เลขรันอัตโนมัติ</span></td><td class="note">เลขลำดับแถว database ออกให้เอง</td></tr>
+    <tr><td class="col">item_id</td><td class="type">String</td><td><span class="badge b-fk">FK</span> → items</td><td class="note">เป็นความเคลื่อนไหวของสินค้าตัวไหน</td></tr>
+    <tr><td class="col">type</td><td class="type">String</td><td><span class="badge b-req">ต้องมี</span></td><td class="note"><code>OPENING</code> (ยอดยกมา) · <code>IN</code> (รับเข้า) · <code>OUT</code> (เบิกออก) · <code>ADJUST</code> (ปรับยอด) — แอปคุมค่าเอง</td></tr>
+    <tr><td class="col">qty_change</td><td class="type">Float</td><td><span class="badge b-req">ต้องมี</span></td><td class="note">จำนวนที่เปลี่ยน — <b>บวก = เข้า, ลบ = ออก</b> (ทศนิยมได้ เช่น นับเป็นเมตร) → ยอดคงเหลือรวมจากคอลัมน์นี้</td></tr>
+    <tr><td class="col">unit_cost</td><td class="type">Float?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">ต้นทุน/หน่วยของรายการนั้น — NULL = ไม่รู้</td></tr>
+    <tr><td class="col">project</td><td class="type">String?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">เบิกไปใช้โปรเจกต์อะไร</td></tr>
+    <tr><td class="col">note</td><td class="type">String?</td><td><span class="badge b-null">ว่างได้</span></td><td class="note">หมายเหตุ — สินค้า 64 ตัวที่ยอดติดลบมีคำเตือนอยู่ตรงนี้</td></tr>
+    <tr><td class="col">transaction_date</td><td class="type">DateTime</td><td><span class="badge b-req">ต้องมี</span></td><td class="note"><b>วันที่ของเกิดจริงในโลก</b> (คนกรอก/copy จากหัวใบ) — คงไว้ที่บรรทัดเสมอ เพื่อให้ query ยอดไม่ต้อง join</td></tr>
+    <tr><td class="col">created_at</td><td class="type">DateTime</td><td><span class="badge b-auto">อัตโนมัติ</span></td><td class="note"><b>เวลาบันทึกเข้าระบบ</b> — database ลงให้เอง (<code>now()</code>) ต่างจากบนได้ เช่น เบิกศุกร์ คีย์จันทร์</td></tr>
+    <tr><td class="col">document_id</td><td class="type">Int?</td><td><span class="badge b-fk">FK</span> → stock_documents <span class="badge b-null">ว่างได้</span></td><td class="note"><b>NULL = ไม่ได้เกิดจากใบ</b> (OPENING 579 แถวเดิม + ADJUST) — IN/OUT ต้องมีใบเสมอ (แอปคุม)</td></tr>
+    <tr><td class="col">created_by</td><td class="type">Int?</td><td><span class="badge b-fk">FK</span> → users <span class="badge b-null">ว่างได้</span></td><td class="note"><b>NULL = ไม่รู้คนทำ</b> (ข้อมูลยกมา) — แอปประทับจากคนที่ login เอง ห้ามให้ผู้ใช้เลือกชื่อเอง</td></tr>
+  </table>
+
+  <!-- แนวคิดสำคัญ -->
+  <h2>🧠 แนวคิดสำคัญที่ร้อยทั้ง 6 ตาราง</h2>
+
+  <div class="concept">
+    <h4>ยอดคงเหลือเป็นค่าคำนวณ — ไม่มีคอลัมน์เก็บยอด</h4>
+    <p>ยอดคงเหลือของสินค้า = <code>SUM(qty_change)</code> ของ item นั้น คำนวณสด ๆ ทุกครั้ง ถ้ามีทั้งคอลัมน์เก็บยอด<i>และ</i>ประวัติ วันหนึ่งสองที่จะขัดกัน → หลัก "ความจริงอยู่ที่เดียว" (single source of truth)</p>
+  </div>
+
+  <div class="concept">
+    <h4>เบิกออก (ISSUE) ต้องผ่านการอนุมัติ — กดขอ ≠ ตัดสต็อก</h4>
+    <p>ไม่ว่าจะขอเบิกล่วงหน้าผ่านเว็บ หรือเดินมาขอที่ห้อง ทุกคำขอสร้างใบ <code>ISSUE</code> ที่ <code>status=PENDING</code> + พักรายการไว้ที่ <code>stock_request_items</code> — <b>ยังไม่สร้างแถวใน stock_transactions</b> (ไม่งั้นยอดลดทั้งที่ของยังไม่ออก) พอคนคลัง (role=STAFF) กด "ยืนยัน" ถึงสร้าง transaction จริงจาก <code>qty_confirmed</code> แล้วเปลี่ยนเป็น <code>CONFIRMED</code> · ถ้ากดยกเลิก → <code>CANCELLED</code> ไม่มี transaction เลย · ฝั่ง <code>RECEIVE</code> คนคลังทำเองตรง ๆ เริ่มที่ <code>CONFIRMED</code> ไม่ผ่าน PENDING</p>
+  </div>
+
+  <div class="concept warnbox">
+    <h4>ยังไม่มีระบบ "กันยอดจอง" — คนคลังเป็นด่านจับ</h4>
+    <p>คำขอ PENDING ไม่สร้าง transaction จึงล่องหนจากยอดคงเหลือ<i>และจากคำขอใบอื่น</i> → 2 คนจองของชิ้นสุดท้ายพร้อมกันได้ ระบบไม่เตือน ชนกันตอนคนคลังยืนยันคนที่ 2 (แล้วปรับ <code>qty_confirmed</code> หรือยกเลิก) — เวอร์ชันแรกตั้งใจให้คนเป็นด่านจับ ถ้าอยากได้ "ยอดพร้อมจ่าย = คงเหลือ − ยอดจองค้าง" ค่อยเพิ่ม logic ทีหลัง (ไม่ต้องแก้ schema)</p>
+  </div>
+
+  <div class="concept">
+    <h4>transaction_date ≠ created_at</h4>
+    <p><code>transaction_date</code> = วันที่ของขยับจริง (คนเลือก, แก้ได้, เอาไปคิดยอด/รายงาน) · <code>created_at</code> = เวลาที่ระบบรับแถว (เครื่องลงให้, แตะไม่ได้, เป็นหลักฐานสืบย้อน) — เหมือนวันไปเที่ยว vs วันโพสต์ลง Facebook</p>
+  </div>
+
+  <div class="concept">
+    <h4>NULL แปลว่า "ไม่รู้/ไม่มี" ไม่ใช่ 0 หรือค่าว่าง</h4>
+    <p><code>latest_cost = NULL</code> คือ "ไม่รู้ราคา" (ต้องแสดงตามนั้น ห้ามโชว์ 0 บาท) · <code>document_id = NULL</code> คือ "ไม่ได้เกิดจากใบ" · <code>created_by = NULL</code> คือ "ไม่รู้คนทำ" — NULL มีความหมายเสมอ</p>
+  </div>
+
+  <div class="concept">
+    <h4>Soft delete — ห้ามลบแถวจริง</h4>
+    <p>สินค้า/คน ที่เลิกใช้ → ตั้ง <code>is_active = false</code> แล้วซ่อน ไม่ลบออกจากตาราง เพราะประวัติ transaction ยังชี้มาหา และรหัสสินค้าห้ามนำกลับมาใช้ (ป้าย QR จริงติดของอยู่)</p>
+  </div>
+
+  <div class="concept warnbox">
+    <h4>onDelete: Restrict — database กันลบใบ/คนที่มีประวัติชี้อยู่</h4>
+    <p>FK ที่ชี้หา users/ใบ (<code>created_by</code>, <code>requested_by</code>, <code>resolved_by</code>, <code>document_id</code>) ตั้ง <code>onDelete: Restrict</code> — ถ้าพยายามลบใบหรือคนที่เคยมีรายการชี้อยู่ database จะ error ทันที เป็นด่านป้องกัน audit trail ขาด (ต่างจากกฎ <code>type</code>/<code>status</code> ที่ SQLite บังคับไม่ได้ — อันนี้บังคับได้จริง)</p>
+  </div>
+
+  <div class="concept">
+    <h4>SQLite ไม่มี enum — แอปต้องคุมค่าเอง</h4>
+    <p>คอลัมน์อย่าง <code>type</code> (OPENING/IN/OUT/ADJUST), <code>doc_type</code> (RECEIVE/ISSUE), <code>status</code> (PENDING/CONFIRMED/CANCELLED) และ <code>role</code> (STAFF/REQUESTER) เก็บเป็นข้อความธรรมดา database ไม่ช่วยกันค่าผิด โค้ดฝั่งแอปต้องตรวจเองว่าใส่ได้เฉพาะค่าที่กำหนด</p>
+  </div>
+
+  <footer>
+    สร้างจาก <code>prisma/schema.prisma</code> · รายละเอียดฉบับเต็มดู <code>docs/data_dictionary.md</code> · ดูข้อมูลจริงด้วย <code>npx prisma studio</code>
+  </footer>
+
+</div>
+</body>
+</html>

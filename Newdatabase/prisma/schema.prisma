@@ -1,0 +1,133 @@
+// พิมพ์เขียวฐานข้อมูลคลังสินค้า — แก้โครงสร้างตารางที่ไฟล์นี้ที่เดียว
+// แล้วรัน `npx prisma migrate dev` เพื่อให้ database จริงอัปเดตตาม
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// กลุ่มสินค้า (จากชีต Group Data เดิม 23 กลุ่ม)
+model ItemGroup {
+  group_id   String  @id // รหัส 2 หลัก เช่น "01" — เป็น text กันเลข 0 นำหน้าหาย
+  group_name String
+  detail     String?
+  items      Item[]
+
+  @@map("item_groups")
+}
+
+// ทะเบียนสินค้า (จากชีต Database เดิม 2,383 รายการ)
+model Item {
+  item_id      String   @id // 5 หลัก เช่น "02001" — 2 ตัวแรกคือกลุ่ม ห้าม reuse รหัสเด็ดขาด
+  name         String
+  unit         String? // หน่วยนับ
+  group_id     String
+  latest_cost  Float? // ราคาล่าสุด — ว่างได้ (NULL = ไม่รู้ราคา ไม่ใช่ราคาศูนย์)
+  is_asset     Boolean  @default(false)
+  storage_type String? // รูปแบบการจัดเก็บ
+  vendor       String? // ร้านค้า
+  note         String?
+  is_active    Boolean  @default(true) // false = ปิดใช้งาน (soft delete) ห้ามลบแถวจริง
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  group        ItemGroup          @relation(fields: [group_id], references: [group_id])
+  transactions StockTransaction[]
+  requestItems StockRequestItem[]
+
+  @@index([group_id])
+  @@map("items")
+}
+
+// ทะเบียนคนคลัง — ยังไม่ใช่ระบบ login (ตารางเริ่มว่าง ให้เพิ่มคนผ่านแอป/Prisma Studio)
+model User {
+  id        Int     @id @default(autoincrement())
+  name      String
+  role      String  @default("STAFF") // STAFF | REQUESTER — SQLite ไม่มี enum โค้ดฝั่งแอปคุมค่าเอง (เฉพาะ STAFF ยืนยัน/ยกเลิกคำขอได้)
+  is_active Boolean @default(true) // ปิดใช้งาน = soft delete ห้ามลบแถวจริง (มีประวัติชี้อยู่)
+  // ↓ repo web เติมทีหลังด้วย migration เดียว ตอนทำ login จริง
+  // username      String  @unique
+  // password_hash String      ← เก็บผล bcrypt (มี salt ฝังในตัว) ไม่ใช่รหัสจริง
+
+  documents          StockDocument[]    @relation("creator") // ใบที่คนนี้เป็นคนสร้าง
+  requestedDocuments StockDocument[]    @relation("requester") // ใบ ISSUE ที่คนนี้เป็นผู้ขอเบิก
+  resolvedDocuments  StockDocument[]    @relation("resolver") // ใบที่คนนี้เป็นคนยืนยัน/ยกเลิก
+  transactions       StockTransaction[]
+
+  @@map("users")
+}
+
+// หัวใบเอกสารรับเข้า/เบิกออก (header–detail: 1 ใบ = หลายแถวใน stock_transactions)
+model StockDocument {
+  id           Int       @id @default(autoincrement())
+  doc_no       String    @unique // เลขที่ใบ — แอปเป็นคนออกเลข
+  doc_type     String // RECEIVE | ISSUE — SQLite ไม่มี enum โค้ดฝั่งแอปต้องคุมค่าเอง
+  doc_date     DateTime // วันที่ทางธุรกิจของใบ (แอป copy ลง transaction_date ของลูกทุกแถว)
+  status       String // PENDING | CONFIRMED | CANCELLED — ไม่ตั้ง default บังคับแอประบุเสมอ (RECEIVE→CONFIRMED, ISSUE→PENDING) กันคำขอหายเงียบ
+  note         String? // หมายเหตุระดับใบ — ใช้เก็บเหตุผลตอนยกเลิกได้ด้วย
+  requested_by Int? // ใครขอเบิก (FK→users) — ISSUE บังคับมี role=REQUESTER, RECEIVE ว่างเสมอ (แอปคุม)
+  resolved_by  Int? // ใครปิดคำขอ ยืนยัน/ยกเลิก (FK→users) — ต้อง role=STAFF เท่านั้น (แอปคุม)
+  resolved_at  DateTime? // เวลาปิดคำขอ (ยืนยันหรือยกเลิกก็นับ)
+  created_by   Int? // ใครสร้างใบ — NULL จนกว่าแอปจะมีระบบ login
+  created_at   DateTime  @default(now())
+
+  // onDelete: Restrict ทุกตัว — ห้ามลบคนที่มีใบชี้อยู่ (ให้ soft delete แทน) กัน audit trail หาย
+  creator      User?              @relation("creator", fields: [created_by], references: [id], onDelete: Restrict)
+  requester    User?              @relation("requester", fields: [requested_by], references: [id], onDelete: Restrict)
+  resolver     User?              @relation("resolver", fields: [resolved_by], references: [id], onDelete: Restrict)
+  requestItems StockRequestItem[]
+  transactions StockTransaction[]
+
+  @@index([created_by])
+  @@index([requested_by])
+  @@index([resolved_by])
+  @@map("stock_documents")
+}
+
+// รายการเคลื่อนไหวสต็อก — ยอดคงเหลือ = SUM(qty_change) ต่อสินค้า ไม่เก็บยอดซ้ำที่อื่น
+model StockTransaction {
+  id               Int      @id @default(autoincrement())
+  item_id          String
+  type             String // OPENING | IN | OUT | ADJUST — SQLite ไม่มี enum โค้ดฝั่งแอปต้องคุมค่าเอง
+  qty_change       Float // บวก = เข้า, ลบ = ออก (มีทศนิยมได้ เช่น ของที่นับเป็นเมตร)
+  unit_cost        Float?
+  project          String?
+  note             String?
+  transaction_date DateTime
+  created_at       DateTime @default(now())
+  document_id      Int? // NULL = ไม่ได้เกิดจากใบเอกสาร (OPENING/ADJUST) — IN/OUT ต้องมีใบเสมอ (แอปคุม)
+  created_by       Int? // NULL = ไม่รู้คนทำ (ข้อมูลยกมา) — แอปประทับจากคน login ห้ามให้ผู้ใช้เลือกเอง
+
+  // onDelete: Restrict ทั้งคู่ — ห้ามลบใบ/คนที่มีประวัติชี้อยู่ (ให้ soft delete แทน) กัน audit trail หาย
+  item     Item           @relation(fields: [item_id], references: [item_id])
+  document StockDocument? @relation(fields: [document_id], references: [id], onDelete: Restrict)
+  creator  User?          @relation(fields: [created_by], references: [id], onDelete: Restrict)
+
+  @@index([item_id])
+  @@index([document_id])
+  @@index([created_by])
+  @@map("stock_transactions")
+}
+
+// รายการที่ขอเบิก (ลูกของใบ ISSUE ที่ยัง PENDING) — พักไว้ที่นี่ ยังไม่แตะยอดคงเหลือ
+// พอคนคลังกดยืนยัน แอปจะอ่านตารางนี้ไปสร้าง stock_transactions จริง (ใช้ qty_confirmed) ทีเดียว
+model StockRequestItem {
+  id            Int     @id @default(autoincrement())
+  document_id   Int
+  item_id       String
+  qty_requested Float // จำนวนที่ผู้เบิกขอตอนกด — เก็บถาวร ห้ามแก้ทับ (อ้างอิงคำขอเดิมย้อนหลังได้)
+  qty_confirmed Float? // จำนวนที่คนคลังให้จริงตอนยืนยัน — NULL ตราบใดที่ยัง PENDING/CANCELLED
+  note          String?
+
+  // onDelete: Restrict — สอดคล้องกับทั้ง repo: ห้ามลบใบ/สินค้าที่มีรายการชี้อยู่
+  document StockDocument @relation(fields: [document_id], references: [id], onDelete: Restrict)
+  item     Item          @relation(fields: [item_id], references: [item_id])
+
+  @@index([document_id])
+  @@index([item_id])
+  @@map("stock_request_items")
+}

@@ -1,0 +1,50 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.env
+**/.env
+!.env.example
+!**/.env.example
+
+# Runtime data
+server/identifier.sqlite
+server/identifier.sqlite-shm
+server/identifier.sqlite-wal
+server/data/users.json
+server/uploads/*
+!server/uploads/.gitkeep
+
+# Database: dev copy + สำรอง — ห้าม commit (ต้นฉบับ Newdatabase/warehouse.db ต้อง commit เสมอ)
+server/warehouse.dev.db
+server/warehouse.dev.db-shm
+server/warehouse.dev.db-wal
+backups/*
+!backups/.gitkeep
+
+# Prisma generated client (สร้างใหม่ได้ด้วย npx prisma generate)
+generated/
+server/generated/
+
+# Claude Code — settings เฉพาะเครื่อง
+.claude/settings.local.json
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
