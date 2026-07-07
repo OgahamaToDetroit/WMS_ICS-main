@@ -16,22 +16,23 @@
 **หลักคิด:** "schema" เดินทางเป็นสคริปต์ migration (replay ที่ไหนก็ได้) ส่วน "ข้อมูลทดลอง" ติดอยู่ในไฟล์ dev
 และตายไปพร้อมไฟล์ — สองอย่างนี้แยกกัน ทำให้ dev เลอะแค่ไหนก็ไม่เปื้อนวันขึ้นจริง
 
+**ตำแหน่ง schema ฉบับมีชีวิต:** `server/prisma/` (แก้โครงสร้าง + สร้าง migration ที่นี่ที่เดียว)
+— ส่วน `Newdatabase/prisma/` คือ snapshot วันส่งมอบ **ห้ามแก้** (ดู `Newdatabase/README.md`)
+
 ---
 
 ## 2. พิธีกรรมประจำวัน (ระหว่างพัฒนา)
 
 ### รีเซ็ตฐานพัฒนาให้กลับสะอาด
 ```powershell
-# ปิดเซิร์ฟเวอร์ + Prisma Studio ก่อนเสมอ (เช็คว่าไม่มีไฟล์ .db-wal ค้างข้างๆ)
-Copy-Item Newdatabase\warehouse.db server\warehouse.dev.db -Force
-# แล้วให้ schema ตามทัน migration ล่าสุด (หลังติดตั้ง Prisma ในเฟส 1)
-npx prisma migrate deploy
+.\scripts\db-reset-dev.ps1
+# = ปิดแอปก่อน → copy ต้นฉบับทับ dev → ปลด read-only → migrate deploy ให้ schema ตามทัน
 ```
 > **ห้ามใช้ `npx prisma migrate reset` เป็นปุ่มรีเซ็ต** — ฝั่งเราไม่มี seed ที่รู้จักข้อมูลส่งมอบ
 > reset แล้วได้ตารางเปล่า (handoff guide ข้อ 6 เตือนไว้เป็นคำเตือนใหญ่สุดของเอกสาร)
 
 ### ก่อนแก้โครงสร้าง (migrate dev) ทุกครั้ง
-1. สำรองก่อน: `Copy-Item server\warehouse.dev.db backups\warehouse-dev-YYYYMMDD.db.bak`
+1. สำรองก่อน: `.\scripts\db-backup.ps1`
 2. แก้ `schema.prisma` → `npx prisma migrate dev --name อธิบายสั้นๆ`
 3. **เปิดอ่านไฟล์ SQL ที่ generate ก่อน apply** — เห็น `DROP` ที่ไม่ได้ตั้งใจ (เช่นจากการ rename คอลัมน์) ให้หยุด
    แล้วแก้เป็น `ALTER TABLE ... RENAME COLUMN` เอง
@@ -40,9 +41,9 @@ npx prisma migrate deploy
 
 ### ซ้อมขึ้นจริง (ทำทุกครั้งที่มี migration ใหม่)
 ```powershell
-Copy-Item Newdatabase\warehouse.db "$env:TEMP\rehearse.db" -Force
-$env:DATABASE_URL = "file:$env:TEMP\rehearse.db"; npx prisma migrate deploy
-# แล้วรันเช็คตัวเลขตรวจรับ (ข้อ 5) กับไฟล์ซ้อม — ผ่าน = วันขึ้นจริงจะผ่าน
+.\scripts\db-rehearse.ps1
+# = copy ต้นฉบับไปไฟล์ชั่วคราว → migrate deploy → ตรวจรับด้วย server/accept.js → ลบทิ้ง
+# ผ่านที่นี่ = วันขึ้นจริงจะผ่าน
 ```
 > เหตุผลที่ต้องซ้อม: migration ที่ผ่านบนฐาน dev อาจตายบนข้อมูลต้นฉบับ (เช่น ใส่ UNIQUE
 > ให้ชื่อสินค้า ทั้งที่ข้อมูลจริงมีชื่อซ้ำ 15 คู่รออยู่) — ขั้นตอนที่ไม่เคยซ้อม = ยังไม่รู้ว่าใช้ได้จริง
@@ -70,6 +71,8 @@ $env:DATABASE_URL = "file:$env:TEMP\rehearse.db"; npx prisma migrate deploy
 6. เปิด backup อัตโนมัติรายวันทันที (Task Scheduler copy ไฟล์ตอนกลางคืนก็เพียงพอ)
 
 ## 5. ตัวเลขตรวจรับ (ค่า ณ วันส่งมอบ — ใช้เช็คหลัง copy/ซ้อม/ขึ้นจริง)
+
+รันอัตโนมัติได้: `node server/accept.js <path-ไฟล์-db>` (ค่าเริ่มต้น `./warehouse.dev.db` — รันจากโฟลเดอร์ server/)
 
 | เช็ค | ค่าที่ต้องได้ |
 |---|---|

@@ -1,12 +1,40 @@
-# React + Vite
+# WMS / ICS — ระบบคลังสินค้า
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+ระบบจัดการคลังสินค้า: หน้าเว็บ React + หลังบ้าน Express + ฐานข้อมูล SQLite (จัดการ schema ด้วย Prisma)
+สถานะปัจจุบัน: กำลังย้ายหลังบ้านจาก schema เดิม (server/db.js) ไปใช้ฐานข้อมูลส่งมอบใหม่ (ledger + ใบเอกสาร)
 
-Currently, two official plugins are available:
+## โครงสร้างโปรเจกต์
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```
+├── src/                      หน้าเว็บ React (Vite + Tailwind/DaisyUI)
+├── server/                   หลังบ้าน Express (ESM)
+│   ├── prisma/               ★ schema + migrations ฉบับมีชีวิต — แก้โครงสร้าง db ที่นี่ที่เดียว
+│   ├── prisma.config.ts      ตั้งค่า Prisma CLI (อ่าน .env เอง, ไม่มี seed โดยเจตนา)
+│   ├── warehouse.dev.db      ฐานพัฒนา (gitignore) — เลอะได้ รีเซ็ตได้ตลอด
+│   ├── accept.js             สคริปต์ตรวจรับ database เทียบตัวเลขวันส่งมอบ
+│   ├── controllers/ routes/  โค้ด API (กำลังทยอยเขียนใหม่ให้เข้ากับ schema ใหม่)
+│   └── db.js                 ชั้นข้อมูลของระบบเดิม (จะถูกแทนที่)
+├── Newdatabase/              โฟลเดอร์ส่งมอบ (archive อ่านอย่างเดียว — ดู README ข้างใน)
+│   ├── warehouse.db          ★ ต้นฉบับข้อมูลสะอาด (read-only + checksum)
+│   └── docs/                 เอกสาร database ฉบับเต็ม (data dictionary, usage guide, QR spec)
+├── scripts/                  สคริปต์ดูแลฐานข้อมูล (backup / reset dev / ซ้อมขึ้นจริง)
+├── backups/                  ที่เก็บสำรอง (gitignore)
+└── DATABASE.md               ★ ระเบียบการจัดการฐานข้อมูล — อ่านก่อนแตะ db ทุกครั้ง
+```
 
-## Expanding the ESLint configuration
+## เริ่มพัฒนา
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm install                    # ติดตั้งฝั่งหน้าเว็บ (ครั้งแรก)
+npm --prefix server install    # ติดตั้งฝั่งเซิร์ฟเวอร์ (ครั้งแรก)
+cp server/.env.example server/.env   # แล้วปรับค่าในไฟล์ (ครั้งแรก)
+npm run dev:all                # รันหน้าเว็บ (5173) + เซิร์ฟเวอร์ (5000) พร้อมกัน
+```
+
+## กติกาเรื่องฐานข้อมูล (ฉบับย่อ — ฉบับเต็มอยู่ DATABASE.md)
+
+- ต้นฉบับ `Newdatabase/warehouse.db` ห้ามแตะ — แอปใช้ `server/warehouse.dev.db` เท่านั้น
+- อยากได้ฐานสะอาด: รัน `.\scripts\db-reset-dev.ps1`
+- ก่อน `prisma migrate dev` ทุกครั้ง: รัน `.\scripts\db-backup.ps1` และเปิดอ่าน SQL ที่ generate ก่อน apply
+- มี migration ใหม่เมื่อไหร่: รัน `.\scripts\db-rehearse.ps1` เพื่อพิสูจน์ว่าวันขึ้นระบบจริงจะผ่าน
+- ห้าม `prisma migrate reset` เด็ดขาด
