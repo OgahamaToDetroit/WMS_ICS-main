@@ -31,6 +31,9 @@ model Item {
   storage_type String? // รูปแบบการจัดเก็บ
   vendor       String? // ร้านค้า
   note         String?
+  min_stock    Float? // จุดเตือนของใกล้หมด — NULL = ยังไม่ตั้งเกณฑ์ (ตัดสินใจ 8 ก.ค. 2026: ไม่ใช้ default กลางๆ แบบระบบเก่า)
+  // เป็น Float เพราะของบางอย่างนับเป็นทศนิยม เช่น สายไฟเป็นเมตร · ป้าย Low Stock ขึ้นเฉพาะตัวที่ตั้งเกณฑ์แล้ว
+  image_url    String? // path รูปสินค้าที่อัปโหลด — NULL = ไม่มีรูป หน้าเว็บ generate placeholder จากชื่อเอง (แบบเดียวกับ users.avatarUrl)
   is_active    Boolean  @default(true) // false = ปิดใช้งาน (soft delete) ห้ามลบแถวจริง
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
