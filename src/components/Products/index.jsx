@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { fetchApi, getAssetUrl } from '../../utils/api';
-import { parseCsv, toCsv } from '../../utils/csv';
+import { toCsv } from '../../utils/csv';
 
 const emptyInboundForm = {
   sku: '',
@@ -11,15 +11,17 @@ const emptyInboundForm = {
   note: ''
 };
 
+// minStock ช่องว่าง = "ยังไม่ตั้งเกณฑ์" (NULL ในฐาน) — ห้ามตั้ง default เป็นตัวเลข
+// ไม่งั้นเปิดฟอร์มแล้วกดบันทึกเฉยๆ จะกลายเป็นการตั้งเกณฑ์โดยไม่ตั้งใจ
+// groupId ว่างจนกว่าผู้ใช้จะเลือก — รหัสสินค้าระบบออกให้ตามกลุ่ม พิมพ์เองไม่ได้แล้ว
 const emptyProductForm = {
   sku: '',
   name: '',
   unit: '',
   vendor: '',
-  groupId: '00',
-  groupName: 'Default',
+  groupId: '',
   latestCost: '',
-  minStock: 10,
+  minStock: '',
   imageUrl: '',
   initialStock: ''
 };
@@ -31,8 +33,8 @@ const csvHeaders = ['sku', 'name', 'unit', 'vendor', 'stock', 'minStock', 'lates
 export default function Products() {
   const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
   const canArchive = currentUser.role === 'Admin';
-  const importInputRef = useRef(null);
   const [products, setProducts] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [inboundModal, setInboundModal] = useState(false);
@@ -86,7 +88,7 @@ export default function Products() {
     setInboundModal(true);
   };
 
-  const openProductModal = (product = null) => {
+  const openProductModal = async (product = null) => {
     if (product) {
       setEditingSku(product.sku);
       setProductForm({
@@ -94,15 +96,24 @@ export default function Products() {
         name: product.name,
         unit: product.unit || '',
         vendor: product.vendor || '',
-        groupId: '00',
-        groupName: product.groupName || 'Default',
+        groupId: '',
         latestCost: product.latestCost ?? '',
-        minStock: product.minStock ?? 10,
+        // NULL = ยังไม่ตั้งเกณฑ์ → แสดงช่องว่างตามจริง (?? 10 เดิมคือกับดักเสกเกณฑ์ทับ NULL ตอนบันทึก)
+        minStock: product.minStock ?? '',
         imageUrl: product.imageUrl || '',
         initialStock: ''
       });
       setImagePreview(product.imageUrl ? getAssetUrl(product.imageUrl) : '');
     } else {
+      // โหมดสร้าง: ต้องมีรายชื่อกลุ่มให้เลือกก่อน (ระบบออกรหัสให้ตามกลุ่ม) — โหลดครั้งแรกครั้งเดียว
+      if (groups.length === 0) {
+        try {
+          const json = await fetchApi('/api/product-groups');
+          if (json.success) setGroups(json.groups);
+        } catch (err) {
+          console.error('Fetch product groups error:', err);
+        }
+      }
       setEditingSku(null);
       setProductForm(emptyProductForm);
       setImagePreview('');
@@ -151,7 +162,8 @@ export default function Products() {
 
   const submitProduct = async (event) => {
     event.preventDefault();
-    if (!productForm.sku.trim() || !productForm.name.trim()) return toast.error('กรุณาระบุ SKU และชื่อสินค้า');
+    if (!productForm.name.trim()) return toast.error('กรุณาระบุชื่อสินค้า');
+    if (!editingSku && !productForm.groupId) return toast.error('กรุณาเลือกกลุ่มสินค้า');
 
     setSubmitting(true);
     try {
@@ -169,12 +181,19 @@ export default function Products() {
 
       const endpoint = editingSku ? `/api/products/${encodeURIComponent(editingSku)}` : '/api/products';
       const method = editingSku ? 'PUT' : 'POST';
+      // ช่องว่าง = null (ยังไม่ตั้งเกณฑ์ / ไม่รู้ราคา) — ห้ามแปลงเป็น 0 หรือ 10 เงียบๆ
       const payload = {
-        ...productForm,
+        name: productForm.name,
+        unit: productForm.unit,
+        vendor: productForm.vendor,
         imageUrl,
         latestCost: productForm.latestCost === '' ? null : Number(productForm.latestCost),
-        minStock: Number(productForm.minStock) || 0,
-        initialStock: productForm.initialStock === '' ? null : Number(productForm.initialStock)
+        minStock: productForm.minStock === '' ? null : Number(productForm.minStock),
+        // โหมดสร้างส่งแค่กลุ่ม — รหัสสินค้าระบบเป็นคนออกให้ (MAX+1 ในกลุ่ม) ไม่มีการพิมพ์เอง
+        ...(editingSku ? {} : {
+          groupId: productForm.groupId,
+          initialStock: productForm.initialStock === '' ? null : Number(productForm.initialStock)
+        })
       };
 
       const json = await fetchApi(endpoint, {
@@ -183,7 +202,8 @@ export default function Products() {
       });
 
       if (json.success) {
-        toast.success(editingSku ? 'อัปเดตสินค้าเรียบร้อย' : 'สร้างสินค้าเรียบร้อย');
+        toast.success(editingSku ? 'อัปเดตสินค้าเรียบร้อย' : `สร้างสินค้าเรียบร้อย — ได้รหัส ${json.sku}`);
+        if (json.warning) toast(json.warning, { icon: '⚠️' });
         setProductModal(false);
         await fetchProducts();
       }
@@ -229,29 +249,6 @@ export default function Products() {
     URL.revokeObjectURL(url);
   };
 
-  const importProducts = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-
-    try {
-      const rows = parseCsv(await file.text());
-
-      const json = await fetchApi('/api/products/import', {
-        method: 'POST',
-        body: JSON.stringify({ rows })
-      });
-
-      if (json.success) {
-        toast.success(`นำเข้าสำเร็จ: เพิ่ม ${json.created}, อัปเดต ${json.updated}, ข้าม ${json.skipped?.length || 0}`);
-        await fetchProducts();
-      }
-    } catch (err) {
-      console.error('Import failed:', err);
-      toast.error('นำเข้าไฟล์ไม่สำเร็จ');
-    }
-  };
-
   const filteredProducts = products.filter(item => (
     item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -263,13 +260,12 @@ export default function Products() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-base-100/60 backdrop-blur-lg p-5 rounded-2xl shadow-sm border border-base-200">
         <div>
           <h1 className="text-2xl font-bold text-base-content">รายการอะไหล่ (Spare Parts)</h1>
-          <p className="text-sm text-base-content/60 mt-1">จัดการ master data, min stock, CSV import/export และบันทึกรับเข้า</p>
+          <p className="text-sm text-base-content/60 mt-1">จัดการ master data, จุดเตือนขั้นต่ำ, ส่งออก CSV และบันทึกรับเข้า</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn btn-ghost btn-sm" onClick={exportProducts} disabled={products.length === 0}>Export CSV</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => importInputRef.current?.click()}>Import CSV</button>
+          {/* ปุ่ม Import CSV ถูกพักตามการตัดสินใจ DATABASE.md ข้อ 6.11 — ช่องรับรหัสจากไฟล์ตรงๆ เลี่ยงระบบออกรหัสตามกลุ่ม */}
           <button className="btn btn-primary btn-sm shadow-md" onClick={() => openProductModal()}>เพิ่มสินค้า</button>
-          <input ref={importInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={importProducts} />
         </div>
       </div>
 
@@ -305,7 +301,8 @@ export default function Products() {
                   <span className="text-sm font-bold opacity-80">สต็อก: {item.stock}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-base-content/60">
-                  <span>ขั้นต่ำ: {item.minStock}</span>
+                  {/* NULL = ยังไม่ตั้งเกณฑ์เตือน — แสดง "-" ห้ามเติมเลขแทน */}
+                  <span>ขั้นต่ำ: {item.minStock ?? '-'}</span>
                   <span>หน่วย: {item.unit || '-'}</span>
                   <span className="col-span-2 truncate">Vendor: {item.vendor || '-'}</span>
                 </div>
@@ -329,10 +326,28 @@ export default function Products() {
             <h3 className="font-bold text-lg text-primary border-b border-base-200 pb-3 mb-4">{editingSku ? 'แก้ไขสินค้า' : 'เพิ่มสินค้าใหม่'}</h3>
             <form onSubmit={submitProduct} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="form-control">
-                  <span className="label-text text-xs font-bold">SKU</span>
-                  <input className="input input-bordered" value={productForm.sku} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })} disabled={Boolean(editingSku)} required />
-                </label>
+                {editingSku ? (
+                  <label className="form-control">
+                    <span className="label-text text-xs font-bold">รหัสสินค้า (SKU)</span>
+                    <input className="input input-bordered" value={productForm.sku} disabled />
+                  </label>
+                ) : (
+                  <label className="form-control">
+                    <span className="label-text text-xs font-bold">กลุ่มสินค้า</span>
+                    <select
+                      className="select select-bordered"
+                      value={productForm.groupId}
+                      onChange={(e) => setProductForm({ ...productForm, groupId: e.target.value })}
+                      required
+                    >
+                      <option value="" disabled>— เลือกกลุ่ม แล้วระบบจะออกรหัสให้ —</option>
+                      {groups.map((group) => (
+                        <option key={group.id} value={group.id}>{group.id} — {group.name}</option>
+                      ))}
+                    </select>
+                    <span className="label-text-alt opacity-60 mt-1">รหัส 5 หลักออกอัตโนมัติ (2 ตัวแรก = กลุ่ม) — พิมพ์รหัสเองไม่ได้ กันชนกับป้าย QR เดิมในคลัง</span>
+                  </label>
+                )}
                 <label className="form-control">
                   <span className="label-text text-xs font-bold">ชื่อสินค้า</span>
                   <input className="input input-bordered" value={productForm.name} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} required />
@@ -346,8 +361,8 @@ export default function Products() {
                   <input className="input input-bordered" value={productForm.vendor} onChange={(e) => setProductForm({ ...productForm, vendor: e.target.value })} />
                 </label>
                 <label className="form-control">
-                  <span className="label-text text-xs font-bold">Min Stock</span>
-                  <input type="number" min="0" className="input input-bordered" value={productForm.minStock} onChange={(e) => setProductForm({ ...productForm, minStock: e.target.value })} />
+                  <span className="label-text text-xs font-bold">จุดเตือนขั้นต่ำ (Min Stock)</span>
+                  <input type="number" min="0" step="any" placeholder="เว้นว่าง = ไม่ตั้งเกณฑ์เตือน" className="input input-bordered" value={productForm.minStock} onChange={(e) => setProductForm({ ...productForm, minStock: e.target.value })} />
                 </label>
                 <label className="form-control">
                   <span className="label-text text-xs font-bold">Latest Cost</span>
@@ -355,8 +370,8 @@ export default function Products() {
                 </label>
                 {!editingSku && (
                   <label className="form-control">
-                    <span className="label-text text-xs font-bold">Initial Stock</span>
-                    <input type="number" min="0" className="input input-bordered" value={productForm.initialStock} onChange={(e) => setProductForm({ ...productForm, initialStock: e.target.value })} />
+                    <span className="label-text text-xs font-bold">ยอดเริ่มต้น (Initial Stock)</span>
+                    <input type="number" min="0" step="any" placeholder="ระบบจะออกใบรับเข้าให้อัตโนมัติ" className="input input-bordered" value={productForm.initialStock} onChange={(e) => setProductForm({ ...productForm, initialStock: e.target.value })} />
                   </label>
                 )}
                 <label className="form-control sm:col-span-2">
