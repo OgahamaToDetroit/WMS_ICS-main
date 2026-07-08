@@ -43,22 +43,58 @@ model Item {
   @@map("items")
 }
 
-// ทะเบียนคนคลัง — ยังไม่ใช่ระบบ login (ตารางเริ่มว่าง ให้เพิ่มคนผ่านแอป/Prisma Studio)
+// ทะเบียนคนใช้ระบบ — ตัวตน + บัญชี login (คอลัมน์ auth เติมโดย migration ก.ค. 2026
+// ตามการตัดสินใจใน DATABASE.md ข้อ 6: สมัครเอง+รออนุมัติ, role 3 ค่า, ลืมรหัสผ่านผ่านอีเมล)
 model User {
-  id        Int     @id @default(autoincrement())
-  name      String
-  role      String  @default("STAFF") // STAFF | REQUESTER — SQLite ไม่มี enum โค้ดฝั่งแอปคุมค่าเอง (เฉพาะ STAFF ยืนยัน/ยกเลิกคำขอได้)
-  is_active Boolean @default(true) // ปิดใช้งาน = soft delete ห้ามลบแถวจริง (มีประวัติชี้อยู่)
-  // ↓ repo web เติมทีหลังด้วย migration เดียว ตอนทำ login จริง
-  // username      String  @unique
-  // password_hash String      ← เก็บผล bcrypt (มี salt ฝังในตัว) ไม่ใช่รหัสจริง
+  id            Int      @id @default(autoincrement())
+  name          String // ชื่อแสดงผล — ตอนสมัครแอป default = username แก้ทีหลังได้
+  username      String   @unique
+  email         String   @unique // ใช้ยืนยันตอนสมัคร + ลืมรหัสผ่าน
+  password_hash String // ผล bcrypt เท่านั้น (มี salt ฝังในตัว) ห้ามเก็บรหัสจริงเด็ดขาด
+  role          String   @default("Operator") // Admin | Manager | Operator — enum จำลอง โค้ดคุมเอง (Admin/Manager ยืนยัน/ปฏิเสธใบได้)
+  status        String   @default("Pending") // Pending | Active | Denied — วงจรอนุมัติบัญชี (login ได้ต้อง Active และ is_active=true)
+  avatarUrl     String? // path รูปโปรไฟล์ — NULL/ว่าง = หน้าเว็บ generate รูปจากชื่อเอง
+  is_active     Boolean  @default(true) // ปิดใช้งาน = soft delete ห้ามลบแถวจริง (มีประวัติชี้อยู่)
+  created_at    DateTime @default(now())
 
-  documents          StockDocument[]    @relation("creator") // ใบที่คนนี้เป็นคนสร้าง
-  requestedDocuments StockDocument[]    @relation("requester") // ใบ ISSUE ที่คนนี้เป็นผู้ขอเบิก
-  resolvedDocuments  StockDocument[]    @relation("resolver") // ใบที่คนนี้เป็นคนยืนยัน/ยกเลิก
+  documents          StockDocument[]      @relation("creator") // ใบที่คนนี้เป็นคนสร้าง
+  requestedDocuments StockDocument[]      @relation("requester") // ใบ ISSUE ที่คนนี้เป็นผู้ขอเบิก
+  resolvedDocuments  StockDocument[]      @relation("resolver") // ใบที่คนนี้เป็นคนปิด (ยืนยัน/ปฏิเสธ/ยกเลิก)
   transactions       StockTransaction[]
+  resetTokens        PasswordResetToken[]
+  auditLogs          AuditLog[]
 
   @@map("users")
+}
+
+// โทเคนลืมรหัสผ่าน — เก็บ hash ของโทเคน ไม่เก็บโทเคนจริง (ใครเห็นตารางก็ปลอมลิงก์รีเซ็ตไม่ได้)
+model PasswordResetToken {
+  token_hash String    @id
+  user_id    Int
+  expires_at DateTime // หมดอายุเมื่อไหร่ — เกินแล้วต้องถือว่าใช้ไม่ได้
+  used_at    DateTime? // NULL = ยังไม่ถูกใช้ · โทเคนใช้ได้ครั้งเดียว
+  created_at DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@index([user_id])
+  @@map("password_reset_tokens")
+}
+
+// บันทึกการกระทำในระบบ (audit trail) — ใครทำอะไรกับอะไรเมื่อไหร่
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  actor_id    Int? // FK → users — NULL = ไม่รู้ผู้กระทำ (เช่น เหตุการณ์ก่อน login สำเร็จ)
+  action      String // เช่น "auth.login", "transaction.resolve" — โค้ดฝั่งแอปกำหนดชุดค่าเอง
+  entity_type String? // ประเภทของสิ่งที่ถูกกระทำ เช่น "user", "product", "transaction"
+  entity_id   String? // รหัสของสิ่งนั้น — เก็บเป็น text เสมอ (item_id เป็น text)
+  details     String? // รายละเอียดเพิ่มเป็น JSON text
+  created_at  DateTime @default(now())
+
+  actor User? @relation(fields: [actor_id], references: [id], onDelete: Restrict)
+
+  @@index([actor_id])
+  @@map("audit_logs")
 }
 
 // หัวใบเอกสารรับเข้า/เบิกออก (header–detail: 1 ใบ = หลายแถวใน stock_transactions)
@@ -69,8 +105,8 @@ model StockDocument {
   doc_date     DateTime // วันที่ทางธุรกิจของใบ (แอป copy ลง transaction_date ของลูกทุกแถว)
   status       String // PENDING | CONFIRMED | CANCELLED — ไม่ตั้ง default บังคับแอประบุเสมอ (RECEIVE→CONFIRMED, ISSUE→PENDING) กันคำขอหายเงียบ
   note         String? // หมายเหตุระดับใบ — ใช้เก็บเหตุผลตอนยกเลิกได้ด้วย
-  requested_by Int? // ใครขอเบิก (FK→users) — ISSUE บังคับมี role=REQUESTER, RECEIVE ว่างเสมอ (แอปคุม)
-  resolved_by  Int? // ใครปิดคำขอ ยืนยัน/ยกเลิก (FK→users) — ต้อง role=STAFF เท่านั้น (แอปคุม)
+  requested_by Int? // ใครขอเบิก (FK→users) — ISSUE บังคับมี, RECEIVE ว่างเสมอ (แอปคุม)
+  resolved_by  Int? // ใครปิดใบ (FK→users) — Admin/Manager ยืนยัน/ปฏิเสธได้ทุกใบ · ผู้ขอยกเลิกใบตัวเองได้เฉพาะตอน PENDING (กติกาฉบับแก้ DATABASE.md ข้อ 6)
   resolved_at  DateTime? // เวลาปิดคำขอ (ยืนยันหรือยกเลิกก็นับ)
   created_by   Int? // ใครสร้างใบ — NULL จนกว่าแอปจะมีระบบ login
   created_at   DateTime  @default(now())
