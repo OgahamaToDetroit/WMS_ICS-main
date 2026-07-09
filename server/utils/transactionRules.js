@@ -108,3 +108,62 @@ export const mapDocumentToTransaction = (doc) => {
     items
   };
 };
+
+// ---------------------------------------------------------------------------
+// ฝั่งรับค่าเข้า: ประมวลผลการอนุมัติ/ปฏิเสธใบ ISSUE (การตัดสินใจที่ database บังคับเองไม่ได้)
+// pure ล้วน — controller หา currentStock จริงจาก DB มาป้อนให้ (I/O อยู่ที่ controller)
+// รับ:  action 'APPROVE'|'REJECT', message, lines: [{ itemId, sku, qtyRequested, qtyApproved, currentStock }]
+// คืน:  { ok:false, error } (ข้อความตรงกับระบบเก่า) | { ok:true, docStatus, message, lines:[{itemId, qtyConfirmed}] }
+// ---------------------------------------------------------------------------
+export const resolveOutcome = ({ action, message = '', lines = [] } = {}) => {
+  const trimmed = String(message || '').trim();
+
+  if (!['APPROVE', 'REJECT'].includes(action)) {
+    return { ok: false, error: 'action ไม่ถูกต้อง' };
+  }
+  if (!Array.isArray(lines) || lines.length === 0) {
+    return { ok: false, error: 'ไม่พบสินค้าในใบเบิก' };
+  }
+
+  // ปฏิเสธทั้งใบ: ต้องมีเหตุผลเสมอ · ทุกบรรทัดได้ 0 · ใบเป็น CANCELLED (คนคลังปิด → แสดงเป็น "ปฏิเสธ")
+  if (action === 'REJECT') {
+    if (!trimmed) return { ok: false, error: 'กรุณาระบุเหตุผลการปฏิเสธใบเบิก' };
+    return {
+      ok: true,
+      docStatus: 'CANCELLED',
+      message: trimmed,
+      lines: lines.map((l) => ({ itemId: l.itemId, qtyConfirmed: 0 }))
+    };
+  }
+
+  // อนุมัติ: ตรวจทีละบรรทัด (คืน error ตัวแรกที่เจอ — ลำดับเดียวกับระบบเก่า)
+  const resolvedLines = [];
+  let anyApproved = false;
+  let allFull = true;
+  for (const line of lines) {
+    const qty = Number(line.qtyApproved);
+    // ไม่ clamp เงียบ — reject พร้อมข้อความ (เผื่อคนคลังมือลั่น จะได้เห็น ไม่ใช่ถูกบีบค่าเงียบๆ)
+    if (!Number.isInteger(qty) || qty < 0) {
+      return { ok: false, error: `จำนวนอนุมัติของ ${line.sku} ไม่ถูกต้อง` };
+    }
+    if (qty > line.qtyRequested) {
+      return { ok: false, error: `อนุมัติ ${line.sku} เกินจำนวนที่ขอ` };
+    }
+    if (qty > line.currentStock) {
+      return { ok: false, error: `สินค้า ${line.sku} มีคงเหลือไม่พอ` };
+    }
+    if (qty > 0) anyApproved = true;
+    if (qty < line.qtyRequested) allFull = false;
+    resolvedLines.push({ itemId: line.itemId, qtyConfirmed: qty });
+  }
+
+  // อนุมัติไม่ครบ (บางส่วน/ตัดบางบรรทัดเหลือศูนย์) ต้องบอกเหตุผลให้ผู้ขอรับทราบเสมอ
+  if (!allFull && !trimmed) {
+    return { ok: false, error: 'กรุณาระบุเหตุผลเมื่ออนุมัติไม่ครบตามจำนวนที่ขอ' };
+  }
+
+  // ไม่มีบรรทัดไหนได้ของเลย → CANCELLED ไม่ใช่ CONFIRMED
+  // (DATABASE.md ข้อ 6.3: ห้ามมีใบ CONFIRMED ที่ไม่มี transaction — ไม่มีใครได้ของ = ไม่มี transaction ถูกสร้าง)
+  const docStatus = anyApproved ? 'CONFIRMED' : 'CANCELLED';
+  return { ok: true, docStatus, message: trimmed || null, lines: resolvedLines };
+};

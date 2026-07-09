@@ -3,11 +3,12 @@ import toast from 'react-hot-toast';
 import { fetchApi, getAssetUrl } from '../../utils/api';
 import { toCsv } from '../../utils/csv';
 
+// minStock ช่องว่าง = "ยังไม่ตั้งเกณฑ์" (NULL ในฐาน) — ถอนกับดัก || 10 ตาม DATABASE.md ข้อ 6.8
 const emptyInboundForm = {
   sku: '',
   name: '',
   quantity: '',
-  minStock: 10,
+  minStock: '',
   note: ''
 };
 
@@ -82,7 +83,7 @@ export default function Products() {
       sku: product.sku,
       name: product.name,
       quantity: '',
-      minStock: product.minStock || 10,
+      minStock: product.minStock ?? '', // เติมค่าเกณฑ์ปัจจุบันจริง (NULL = ว่าง) ไม่เสก 10 — ไม่แตะ = คงเดิม
       note: ''
     } : emptyInboundForm);
     setInboundModal(true);
@@ -142,7 +143,7 @@ export default function Products() {
           sku: inboundForm.sku,
           name: inboundForm.name,
           quantity: Number(inboundForm.quantity),
-          minStock: Number(inboundForm.minStock) || 10,
+          minStock: inboundForm.minStock, // ส่งดิบ ('' = ไม่ตั้งเกณฑ์) — backend parseMinStock จัดการ ไม่บีบเป็น 10
           note: inboundForm.note
         })
       });
@@ -414,7 +415,7 @@ export default function Products() {
               <input type="text" placeholder="ชื่ออะไหล่" className="input input-bordered w-full" value={inboundForm.name} onChange={e => setInboundForm({ ...inboundForm, name: e.target.value })} required />
               <div className="grid grid-cols-2 gap-3">
                 <input type="number" min="1" placeholder="จำนวนรับเข้า" className="input input-bordered w-full" value={inboundForm.quantity} onChange={e => setInboundForm({ ...inboundForm, quantity: e.target.value })} required />
-                <input type="number" min="0" placeholder="ขั้นต่ำ" className="input input-bordered w-full" value={inboundForm.minStock} onChange={e => setInboundForm({ ...inboundForm, minStock: e.target.value })} />
+                <input type="number" min="0" step="any" placeholder="ขั้นต่ำ (เว้นว่าง = ไม่ตั้ง)" className="input input-bordered w-full" value={inboundForm.minStock} onChange={e => setInboundForm({ ...inboundForm, minStock: e.target.value })} />
               </div>
               <textarea className="textarea textarea-bordered h-20 w-full" value={inboundForm.note} onChange={(e) => setInboundForm({ ...inboundForm, note: e.target.value })} placeholder="เลขใบส่งของ / ผู้ส่งมอบ / หมายเหตุ"></textarea>
               <div className="flex justify-end gap-3 pt-4 border-t border-base-200">
