@@ -107,7 +107,8 @@ model StockDocument {
   doc_type     String // RECEIVE | ISSUE — SQLite ไม่มี enum โค้ดฝั่งแอปต้องคุมค่าเอง
   doc_date     DateTime // วันที่ทางธุรกิจของใบ (แอป copy ลง transaction_date ของลูกทุกแถว)
   status       String // PENDING | CONFIRMED | CANCELLED — ไม่ตั้ง default บังคับแอประบุเสมอ (RECEIVE→CONFIRMED, ISSUE→PENDING) กันคำขอหายเงียบ
-  note         String? // หมายเหตุระดับใบ — ใช้เก็บเหตุผลตอนยกเลิกได้ด้วย
+  note         String? // หมายเหตุระดับใบ — ใช้เก็บเหตุผลตอนยกเลิก/ปฏิเสธ (ตรงกับ adminMessage ของทรง JSON เดิม)
+  project      String? // โปรเจกต์/เหตุผลที่เบิกไปใช้ — ระดับใบ ผู้ขอกรอกตอนสร้างใบ ISSUE (ต้องมีที่เก็บตั้งแต่ PENDING ที่ยังไม่มีแถว transaction) · ตอน confirm แอป copy ลง stock_transactions.project ของลูกทุกแถว · RECEIVE = NULL ได้
   requested_by Int? // ใครขอเบิก (FK→users) — ISSUE บังคับมี, RECEIVE ว่างเสมอ (แอปคุม)
   resolved_by  Int? // ใครปิดใบ (FK→users) — Admin/Manager ยืนยัน/ปฏิเสธได้ทุกใบ · ผู้ขอยกเลิกใบตัวเองได้เฉพาะตอน PENDING (กติกาฉบับแก้ DATABASE.md ข้อ 6)
   resolved_at  DateTime? // เวลาปิดคำขอ (ยืนยันหรือยกเลิกก็นับ)
