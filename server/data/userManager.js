@@ -1,149 +1,98 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import bcrypt from 'bcryptjs';
-import db from '../db.js';
-import { config } from '../config.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const legacyUsersFilePath = path.join(__dirname, 'users.json');
-
-const VALID_ROLES = ['Admin', 'Manager', 'Operator'];
-const VALID_STATUSES = ['Pending', 'Active', 'Denied'];
-
-// คอลัมน์ที่ปลอดภัยจะดึงออกมาใช้งาน (รวม password ไว้เพราะ auth ต้องใช้เปรียบเทียบ)
-const USER_COLUMNS = 'id, username, email, password, role, status, avatarUrl';
-
-const normalizeRole = (role) => (VALID_ROLES.includes(role) ? role : 'Operator');
-const normalizeStatus = (status) => (VALID_STATUSES.includes(status) ? status : 'Pending');
-
-const insertUserStmt = db.prepare(`
-  INSERT INTO app_users (id, username, email, password, role, status, avatarUrl)
-  VALUES (@id, @username, @email, @password, @role, @status, @avatarUrl)
-`);
+// data layer ของเส้น auth — ย้ายมาใช้ database ใหม่ (Prisma model User) แล้ว
+// เป็นชั้น query ล้วน (async): controller/middleware ใช้ร่วมกัน 3 ที่ กติกาที่ database
+// บังคับเองไม่ได้อยู่ที่ utils/authRules.js (แยกไว้เทสต์ได้) — แนวเดียวกับเส้น products
+//
+// ต่างจากฐานเก่า (app_users): คอลัมน์ password → password_hash, เพิ่ม name (NOT NULL) + is_active
+// ⚠️ ไม่ seed admin ตอน import อีกต่อไป — ฐานใหม่ห้ามมีปุ่ม "ล้างแล้วเติมข้อมูล" ใกล้มือ
+//    admin คนแรกสร้างผ่าน `npm run create-admin` เท่านั้น (DATABASE.md ข้อ 4 + prisma.config ตั้งใจไม่มี seed)
+import { prisma } from '../prisma.js';
+import { normalizeRole, normalizeStatus } from '../utils/authRules.js';
 
 // ---------------------------------------------------------------------------
-// Seed / migration — รันครั้งเดียวตอนโหลดโมดูล ถ้าตาราง app_users ยังว่างอยู่
+// อ่าน (finders)
 // ---------------------------------------------------------------------------
-const seedUsersIfNeeded = () => {
-  const count = db.prepare('SELECT COUNT(*) AS count FROM app_users').get().count;
-  if (count > 0) return;
 
-  // 1) ย้ายข้อมูลจากไฟล์ users.json เดิม (ถ้ามี) เข้าสู่ SQLite
-  if (fs.existsSync(legacyUsersFilePath)) {
-    let legacyUsers = [];
-    try {
-      legacyUsers = JSON.parse(fs.readFileSync(legacyUsersFilePath, 'utf8'));
-    } catch {
-      legacyUsers = [];
-    }
-
-    let nextId = Date.now();
-    const prepared = (Array.isArray(legacyUsers) ? legacyUsers : [])
-      .map((user) => ({
-        id: Number(user.id) || nextId++,
-        username: String(user.username || '').trim(),
-        email: String(user.email || '').trim().toLowerCase(),
-        password: user.password,
-        role: normalizeRole(user.role),
-        status: normalizeStatus(user.status),
-        avatarUrl: user.avatarUrl || ''
-      }))
-      .filter((user) => user.username && user.email && user.password);
-
-    if (prepared.length > 0) {
-      db.transaction(() => {
-        for (const user of prepared) insertUserStmt.run(user);
-      })();
-      console.log(`Migrated ${prepared.length} user(s) from legacy users.json into SQLite.`);
-      return;
-    }
-  }
-
-  // 2) ถ้าไม่มีข้อมูลเดิมเลย ให้สร้าง admin เริ่มต้นจากค่าใน .env
-  if (config.bootstrapAdmin.password) {
-    insertUserStmt.run({
-      id: 1,
-      username: config.bootstrapAdmin.username,
-      email: String(config.bootstrapAdmin.email || '').trim().toLowerCase(),
-      password: bcrypt.hashSync(config.bootstrapAdmin.password, 10),
-      role: 'Admin',
-      status: 'Active',
-      avatarUrl: ''
-    });
-    console.log(`Created bootstrap admin user "${config.bootstrapAdmin.username}".`);
-  }
-};
-
-seedUsersIfNeeded();
-
-// ---------------------------------------------------------------------------
-// Query helpers — อ่าน/เขียนแบบราย record ตรงๆ กับ SQLite
-// ---------------------------------------------------------------------------
-export const getUsers = () =>
-  db.prepare(`SELECT ${USER_COLUMNS} FROM app_users ORDER BY username COLLATE NOCASE ASC`).all();
-
-export const getUserById = (id) =>
-  db.prepare(`SELECT ${USER_COLUMNS} FROM app_users WHERE id = ?`).get(Number(id));
-
-export const getUserByUsername = (username) =>
-  db.prepare(`SELECT ${USER_COLUMNS} FROM app_users WHERE LOWER(username) = LOWER(?)`)
-    .get(String(username || '').trim());
-
-export const getUserByEmail = (email) =>
-  db.prepare(`SELECT ${USER_COLUMNS} FROM app_users WHERE LOWER(email) = LOWER(?)`)
-    .get(String(email || '').trim());
-
-export const countActiveAdmins = () =>
-  db.prepare(`SELECT COUNT(*) AS count FROM app_users WHERE role = 'Admin' AND status = 'Active'`)
-    .get().count;
-
-export const createUser = ({ id, username, email, password, role = 'Operator', status = 'Pending', avatarUrl = '' }) => {
-  const newUser = {
-    id: Number(id) || Date.now(),
-    username: String(username || '').trim(),
-    email: String(email || '').trim().toLowerCase(),
-    password,
-    role: normalizeRole(role),
-    status: normalizeStatus(status),
-    avatarUrl: avatarUrl || ''
-  };
-  insertUserStmt.run(newUser);
-  return newUser;
-};
-
-// ฟิลด์ที่อนุญาตให้แก้ไข พร้อมฟังก์ชัน normalize ของแต่ละฟิลด์
-const UPDATABLE_FIELDS = {
-  username: (value) => String(value).trim(),
-  email: (value) => String(value).trim().toLowerCase(),
-  password: (value) => value,
-  role: (value) => normalizeRole(value),
-  status: (value) => normalizeStatus(value),
-  avatarUrl: (value) => (value == null ? '' : String(value))
-};
-
-export const updateUser = (id, fields = {}) => {
+export const getUserById = async (id) => {
   const numericId = Number(id);
-  const setClauses = [];
-  const params = { id: numericId };
-
-  for (const [key, transform] of Object.entries(UPDATABLE_FIELDS)) {
-    if (fields[key] !== undefined) {
-      setClauses.push(`${key} = @${key}`);
-      params[key] = transform(fields[key]);
-    }
-  }
-
-  if (setClauses.length > 0) {
-    setClauses.push('updated_at = CURRENT_TIMESTAMP');
-    db.prepare(`UPDATE app_users SET ${setClauses.join(', ')} WHERE id = @id`).run(params);
-  }
-
-  return getUserById(numericId);
+  if (!Number.isInteger(numericId)) return null;
+  return prisma.user.findUnique({ where: { id: numericId } });
 };
 
-export const deleteUser = (id) => {
-  const info = db.prepare('DELETE FROM app_users WHERE id = ?').run(Number(id));
-  return info.changes > 0;
+// username: match แบบไม่สนตัวพิมพ์ (รักษาพฤติกรรมฐานเก่าที่ใช้ LOWER() สองฝั่ง)
+// Prisma บน SQLite ไม่รองรับ mode:'insensitive' — ใช้ raw หา id ก่อนแล้วค่อย findUnique
+// (LOWER ของ SQLite ครอบเฉพาะ ASCII เท่ากับพฤติกรรมเดิมเป๊ะ · ชื่อภาษาไทยไม่ได้รับผลทั้งสองทาง)
+export const getUserByUsername = async (username) => {
+  const value = String(username || '').trim();
+  if (!value) return null;
+  const rows = await prisma.$queryRaw`SELECT id FROM users WHERE LOWER(username) = LOWER(${value}) LIMIT 1`;
+  if (!rows.length) return null;
+  return prisma.user.findUnique({ where: { id: Number(rows[0].id) } });
+};
+
+// email เก็บเป็น lowercase เสมอ (createUser/updateUser บังคับ) → findUnique ตรงๆ ก็ไม่สนตัวพิมพ์อยู่แล้ว
+export const getUserByEmail = async (email) => {
+  const value = String(email || '').trim().toLowerCase();
+  if (!value) return null;
+  return prisma.user.findUnique({ where: { email: value } });
+};
+
+// รายชื่อสำหรับหน้าจัดการผู้ใช้ — โชว์เฉพาะที่ยังใช้งานอยู่ (soft delete แล้วซ่อนจากตาราง)
+export const getUsers = async () =>
+  prisma.user.findMany({ where: { is_active: true }, orderBy: { username: 'asc' } });
+
+// นับ Admin ที่ใช้งานได้จริง (ทั้งอนุมัติแล้ว + ยังไม่ปลดระวาง) — กันเผลอลด Admin คนสุดท้าย
+export const countActiveAdmins = async () =>
+  prisma.user.count({ where: { role: 'Admin', status: 'Active', is_active: true } });
+
+// ---------------------------------------------------------------------------
+// เขียน
+// ---------------------------------------------------------------------------
+
+// สมัคร/สร้างผู้ใช้ — name (NOT NULL) default = username แก้ทีหลังได้ · เก็บแต่ password_hash
+export const createUser = async ({
+  username,
+  email,
+  password_hash,
+  name,
+  role = 'Operator',
+  status = 'Pending',
+  avatarUrl = null
+}) => {
+  const trimmedUsername = String(username || '').trim();
+  return prisma.user.create({
+    data: {
+      name: String(name || trimmedUsername).trim() || trimmedUsername,
+      username: trimmedUsername,
+      email: String(email || '').trim().toLowerCase(),
+      password_hash,
+      role: normalizeRole(role),
+      status: normalizeStatus(status),
+      avatarUrl: avatarUrl == null ? null : String(avatarUrl)
+    }
+  });
+};
+
+// แก้เฉพาะ field ที่ส่งมาจริง (undefined = ไม่แตะ) — กันเสก default ทับค่าที่ไม่ได้ตั้งใจแก้
+export const updateUser = async (id, fields = {}) => {
+  const numericId = Number(id);
+  const data = {};
+
+  if (fields.username !== undefined) data.username = String(fields.username).trim();
+  if (fields.email !== undefined) data.email = String(fields.email).trim().toLowerCase();
+  if (fields.password_hash !== undefined) data.password_hash = fields.password_hash;
+  if (fields.role !== undefined) data.role = normalizeRole(fields.role);
+  if (fields.status !== undefined) data.status = normalizeStatus(fields.status);
+  if (fields.avatarUrl !== undefined) data.avatarUrl = fields.avatarUrl == null ? null : String(fields.avatarUrl);
+  if (fields.is_active !== undefined) data.is_active = Boolean(fields.is_active);
+
+  if (Object.keys(data).length === 0) return getUserById(numericId);
+  return prisma.user.update({ where: { id: numericId }, data });
+};
+
+// ลบ = soft delete เท่านั้น (DATABASE.md ข้อ 5) — FK ทุกเส้นตั้ง ON DELETE RESTRICT
+// hard delete ผู้ใช้ที่เคย login/สร้างใบ จะโดน database เตะ (P2003) อยู่แล้ว
+// ผลข้างเคียงที่ตั้งใจ: username/email ของแถวนี้ถูกจอง (unique) ต่อไป — สมัครซ้ำชื่อเดิมไม่ได้
+export const deactivateUser = async (id) => {
+  await prisma.user.update({ where: { id: Number(id) }, data: { is_active: false } });
+  return true;
 };

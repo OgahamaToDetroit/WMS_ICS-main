@@ -1,5 +1,8 @@
+// สร้าง/รีเซ็ต admin คนแรกในตาราง users ของ database ใหม่ — รันด้วย `npm run create-admin`
+// เป็นช่องทางเดียวที่ seed admin (userManager ไม่ seed ตอน import อีกต่อไป ตาม DATABASE.md ข้อ 4)
+// ถ้าไม่รันตัวนี้ก่อน ตาราง users จะว่าง → login ไม่ได้เพราะไม่มีบัญชีเลย
 import bcrypt from 'bcryptjs';
-import { getUserByUsername, getUserByEmail, createUser, updateUser } from './data/userManager.js';
+import { prisma } from './prisma.js';
 import { config } from './config.js';
 
 async function createAdmin() {
@@ -10,31 +13,22 @@ async function createAdmin() {
     throw new Error('BOOTSTRAP_ADMIN_PASSWORD is required to create an admin account.');
   }
 
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const existing = getUserByUsername(username) || getUserByEmail(email);
+  const password_hash = await bcrypt.hash(password, 10);
 
-  if (existing) {
-    updateUser(existing.id, {
-      username,
-      email,
-      password: hashedPassword,
-      role: 'Admin',
-      status: 'Active'
-    });
-  } else {
-    createUser({
-      username,
-      email,
-      password: hashedPassword,
-      role: 'Admin',
-      status: 'Active'
-    });
-  }
+  // upsert ด้วย username (unique) — มีอยู่แล้วรีเซ็ตรหัส/ยกเป็น Admin ให้ · ยังไม่มีสร้างใหม่
+  // name (NOT NULL) default = username · role=Admin + status=Active + is_active=true = login ได้ทันที
+  const user = await prisma.user.upsert({
+    where: { username },
+    update: { email, password_hash, role: 'Admin', status: 'Active', is_active: true },
+    create: { name: username, username, email, password_hash, role: 'Admin', status: 'Active', is_active: true }
+  });
 
-  console.log(`Admin account "${username}" is ready.`);
+  console.log(`Admin account "${user.username}" is ready.`);
 }
 
-createAdmin().catch(error => {
-  console.error(error.message);
-  process.exit(1);
-});
+createAdmin()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });

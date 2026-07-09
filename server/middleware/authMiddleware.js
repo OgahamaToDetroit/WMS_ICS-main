@@ -1,8 +1,9 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { getUserById } from '../data/userManager.js';
+import { canLogin } from '../utils/authRules.js';
 
-export const verifyAuth = (req, res, next) => {
+export const verifyAuth = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -13,12 +14,14 @@ export const verifyAuth = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, config.jwtSecret);
-    const user = getUserById(decoded.id);
+    const user = await getUserById(decoded.id);
 
-    if (!user || user.status !== 'Active') {
+    // เช็คซ้ำทุกคำขอด้วยเงื่อนไขสองแกน (status=Active และ is_active=true) — token อาจออกก่อนถูกปลดระวาง
+    if (!canLogin(user)) {
       return res.status(403).json({ success: false, message: 'บัญชีนี้ไม่พร้อมใช้งาน' });
     }
 
+    // ⚠️ คงรูป {id, username, role} เป๊ะ — เส้น transactions (ยังไม่ย้าย) พึ่ง req.user.username หนัก
     req.user = { id: user.id, username: user.username, role: user.role };
     next();
   } catch {

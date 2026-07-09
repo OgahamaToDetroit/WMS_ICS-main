@@ -1,31 +1,31 @@
-// server/controllers/userController.js
+// server/controllers/userController.js — จัดการผู้ใช้ (ฝั่ง Admin) ย้ายมาฐานใหม่แล้ว
+// บทบาท "ล่าม": ทรง JSON แต่ละ endpoint คงเดิมเป๊ะ (แต่ละอันไม่เหมือนกัน ห้ามยุบรวม)
 import {
   getUsers,
   getUserById,
   getUserByUsername,
   getUserByEmail,
   updateUser,
-  deleteUser as deleteUserRecord,
+  deactivateUser,
   countActiveAdmins
 } from '../data/userManager.js';
+import { VALID_ROLES, VALID_STATUSES } from '../utils/authRules.js';
+import { tryLogAudit } from '../utils/audit.js';
 import { sendEmail } from '../utils/sendEmail.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { config } from '../config.js';
-import { logAudit } from '../db.js';
 
-const VALID_STATUSES = ['Pending', 'Active', 'Denied'];
-const VALID_ROLES = ['Admin', 'Manager', 'Operator'];
-
-export const getUsersList = (req, res) => {
-  // ไม่ส่ง password กลับไปที่หน้าเว็บ
-  const safeUsers = getUsers().map((user) => ({
+export const getUsersList = async (req, res) => {
+  // ไม่ส่ง password_hash กลับหน้าเว็บ · avatarUrl ดิบ (NULL → '' ให้ตรงทรงเดิมที่ default เป็น '')
+  const users = await getUsers();
+  const safeUsers = users.map((user) => ({
     id: user.id,
     username: user.username,
     email: user.email,
     role: user.role,
     status: user.status,
-    avatarUrl: user.avatarUrl
+    avatarUrl: user.avatarUrl || ''
   }));
   res.json({ success: true, users: safeUsers });
 };
@@ -40,15 +40,15 @@ export const updateUserStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: 'สถานะผู้ใช้ไม่ถูกต้อง' });
     }
 
-    const existing = getUserById(userId);
+    const existing = await getUserById(userId);
     if (!existing) return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้งาน' });
 
-    if (existing.role === 'Admin' && status !== 'Active' && countActiveAdmins() <= 1) {
+    if (existing.role === 'Admin' && status !== 'Active' && (await countActiveAdmins()) <= 1) {
       return res.status(400).json({ success: false, message: 'ต้องมี Admin ที่ใช้งานได้อย่างน้อย 1 คน' });
     }
 
-    const user = updateUser(userId, { status });
-    logAudit(req.user?.username, 'user.status_update', 'user', userId, { status });
+    const user = await updateUser(userId, { status });
+    await tryLogAudit(req.user?.id, 'user.status_update', 'user', userId, { status });
 
     const subject = status === 'Active' ? 'WMS - บัญชีของคุณได้รับการอนุมัติแล้ว 🎉' : 'WMS - บัญชีของคุณถูกปฏิเสธ';
     const htmlMessage = status === 'Active'
@@ -63,7 +63,7 @@ export const updateUserStatus = async (req, res) => {
   }
 };
 
-export const updateUserRole = (req, res) => {
+export const updateUserRole = async (req, res) => {
   const userId = parseInt(req.params.id);
   const { role } = req.body;
 
@@ -71,35 +71,37 @@ export const updateUserRole = (req, res) => {
     return res.status(400).json({ success: false, message: 'บทบาทผู้ใช้ไม่ถูกต้อง' });
   }
 
-  const existing = getUserById(userId);
+  const existing = await getUserById(userId);
   if (!existing) return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้งาน' });
 
-  if (existing.role === 'Admin' && role !== 'Admin' && countActiveAdmins() <= 1) {
+  if (existing.role === 'Admin' && role !== 'Admin' && (await countActiveAdmins()) <= 1) {
     return res.status(400).json({ success: false, message: 'ต้องมี Admin ที่ใช้งานได้อย่างน้อย 1 คน' });
   }
 
-  updateUser(userId, { role });
-  logAudit(req.user?.username, 'user.role_update', 'user', userId, { role });
+  await updateUser(userId, { role });
+  await tryLogAudit(req.user?.id, 'user.role_update', 'user', userId, { role });
   return res.json({ success: true });
 };
 
-export const deleteUser = (req, res) => {
+// "ลบ" = soft delete (is_active=false) เท่านั้น — FK ทุกเส้นตั้ง RESTRICT (DATABASE.md ข้อ 5)
+// หน้าเว็บลบแถวออกจากตารางแบบ optimistic อยู่แล้ว + getUsersList กรอง is_active → หายจากตารางเหมือนเดิม
+export const deleteUser = async (req, res) => {
   const userId = parseInt(req.params.id);
   if (userId === req.user?.id) {
     return res.status(400).json({ success: false, message: 'ไม่สามารถลบบัญชีของตัวเองได้' });
   }
 
-  const targetUser = getUserById(userId);
+  const targetUser = await getUserById(userId);
   if (!targetUser) {
     return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้งานที่ต้องการลบ' });
   }
 
-  if (targetUser.role === 'Admin' && countActiveAdmins() <= 1) {
+  if (targetUser.role === 'Admin' && (await countActiveAdmins()) <= 1) {
     return res.status(400).json({ success: false, message: 'ต้องมี Admin ที่ใช้งานได้อย่างน้อย 1 คน' });
   }
 
-  deleteUserRecord(userId);
-  logAudit(req.user?.username, 'user.delete', 'user', userId, { username: targetUser.username });
+  await deactivateUser(userId);
+  await tryLogAudit(req.user?.id, 'user.delete', 'user', userId, { username: targetUser.username });
   res.json({ success: true, message: 'ลบผู้ใช้งานสำเร็จ' });
 };
 
@@ -107,14 +109,14 @@ export const updateProfile = async (req, res) => {
   try {
     const { newUsername, email, password, avatarUrl } = req.body;
 
-    const current = getUserById(req.user?.id);
+    const current = await getUserById(req.user?.id);
     if (!current) return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้งาน' });
 
     const updates = {};
 
     // 1. เช็คว่า Username ใหม่ซ้ำกับคนอื่นไหม
     if (newUsername && newUsername !== current.username) {
-      const isTaken = getUserByUsername(newUsername);
+      const isTaken = await getUserByUsername(newUsername);
       if (isTaken && isTaken.id !== current.id) {
         return res.status(400).json({ success: false, message: 'Username นี้ถูกใช้งานแล้ว' });
       }
@@ -124,7 +126,7 @@ export const updateProfile = async (req, res) => {
     // 2. เช็คว่า Email ใหม่ซ้ำกับคนอื่นไหม
     if (email) {
       const normalizedEmail = String(email).trim().toLowerCase();
-      const emailTaken = getUserByEmail(normalizedEmail);
+      const emailTaken = await getUserByEmail(normalizedEmail);
       if (emailTaken && emailTaken.id !== current.id) {
         return res.status(400).json({ success: false, message: 'Email นี้ถูกใช้งานแล้ว' });
       }
@@ -137,11 +139,11 @@ export const updateProfile = async (req, res) => {
       if (password.length < 8) {
         return res.status(400).json({ success: false, message: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร' });
       }
-      updates.password = await bcrypt.hash(password, 10);
+      updates.password_hash = await bcrypt.hash(password, 10);
     }
 
-    const updated = updateUser(current.id, updates);
-    logAudit(req.user?.username, 'user.profile_update', 'user', updated.id);
+    const updated = await updateUser(current.id, updates);
+    await tryLogAudit(req.user?.id, 'user.profile_update', 'user', updated.id);
 
     // 4. ออก Token ใหม่เฉพาะตอนที่ Username เปลี่ยน (เพราะ payload เปลี่ยน)
     const newToken = updates.username
@@ -157,7 +159,7 @@ export const updateProfile = async (req, res) => {
         username: updated.username,
         email: updated.email,
         role: updated.role,
-        avatarUrl: updated.avatarUrl
+        avatarUrl: updated.avatarUrl || ''
       }
     });
   } catch {

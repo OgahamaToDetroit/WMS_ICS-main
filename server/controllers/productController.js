@@ -1,12 +1,13 @@
 // เส้น products ย้ายมาใช้ database ใหม่ (ผ่าน server/prisma.js) แล้ว — บทบาท "ล่าม":
 // ใช้ตาราง/ตรรกะของฐานใหม่ข้างใน แต่ตอบ JSON ทรงเดิมให้หน้า React
 //
-// ที่ยังอยู่ฝั่งฐานเก่า (identifier.sqlite) ชั่วคราวตาม DATABASE.md ข้อ 6 ข้อ 12:
-// - getDashboardStats (ย้ายพร้อมเส้น transactions)
-// - logAudit (ย้ายพร้อมเส้น auth — audit_logs ฐานใหม่ใช้ actor_id FK ซึ่งตาราง users ยังว่าง)
-// ตัวเลข dashboard กับหน้า products จึงไม่ตรงกันชั่วคราว = ตั้งใจ ไม่ใช่บั๊ก
-import db, { logAudit } from '../db.js';
+// audit ย้ายมาฐานใหม่แล้วพร้อมเส้น auth (utils/audit.js ใช้ actor_id FK → users.id) —
+// จุดเชื่อม 2 เส้น: logAudit ส่ง req.user.id (ไม่ใช่ username) + createProduct ประทับ created_by = req.user.id
+// ที่ยังอยู่ฝั่งฐานเก่า (identifier.sqlite) ชั่วคราวตาม DATABASE.md ข้อ 12:
+// - getDashboardStats (ย้ายพร้อมเส้น transactions) → ตัวเลข dashboard กับหน้า products ยังไม่ตรงกันชั่วคราว = ตั้งใจ
+import db from '../db.js';
 import { prisma } from '../prisma.js';
+import { tryLogAudit } from '../utils/audit.js';
 import {
   GROUP_CAPACITY,
   buildDocNoPrefix,
@@ -21,16 +22,6 @@ import {
 } from '../utils/productRules.js';
 
 const trimmedId = (value) => String(value || '').trim();
-
-// ช่วงเปลี่ยนผ่าน audit เขียนลงฐานเก่า — ถ้าฐานเก่าพังอย่าให้เส้นหลักล้มตาม
-// (ฐานเก่าเป็นข้อมูลทดลองทั้งก้อน ทิ้งได้เมื่อย้ายครบ — ข้อ 12)
-const tryLogAudit = (...args) => {
-  try {
-    logAudit(...args);
-  } catch (error) {
-    console.error('logAudit (ฐานเก่า) ล้มเหลว:', error);
-  }
-};
 
 export const getProducts = async (req, res) => {
   try {
@@ -135,6 +126,7 @@ export const createProduct = async (req, res) => {
     }
 
     const now = new Date();
+    const actorId = req.user?.id ?? null; // คน login (route ห่อ verifyAuth อยู่แล้ว) — ประทับเป็น created_by
 
     // อ่าน MAX + insert ต้องอยู่ใน transaction เดียว และถือ unique constraint (PK/doc_no)
     // เป็นรั้วชั้นสุดท้าย — ชนเมื่อไหร่ (P2002) วนออกเลขใหม่ ไม่ใช่ล้มทั้งคำขอ
@@ -188,7 +180,7 @@ export const createProduct = async (req, res) => {
                 status: 'CONFIRMED', // RECEIVE เริ่ม CONFIRMED เสมอ — รับเข้าจบในขั้นเดียว ไม่มีวงจรอนุมัติ
                 note: 'ยอดเริ่มต้นจากการสร้างสินค้าใหม่',
                 // requested_by/resolved_by/resolved_at = NULL ตามตาราง state ของใบ RECEIVE (data_dictionary §6.1)
-                created_by: null // จะประทับจากคน login จริงเมื่อเส้น auth ย้ายมาฐานนี้ (ระหว่างนี้ผู้กระทำอยู่ใน audit ฝั่งเก่า)
+                created_by: actorId // ประทับจากคน login (เส้น auth ย้ายมาฐานนี้แล้ว)
               }
             });
 
@@ -200,7 +192,7 @@ export const createProduct = async (req, res) => {
                 unit_cost: latestCost.value,
                 transaction_date: now, // ใบตรง: copy doc_date ลง transaction_date (data_dictionary ข้อ 6)
                 document_id: doc.id,
-                created_by: null
+                created_by: actorId
               }
             });
           }
@@ -219,7 +211,7 @@ export const createProduct = async (req, res) => {
       return res.status(409).json({ success: false, message: 'ออกรหัสสินค้าไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' });
     }
 
-    tryLogAudit(req.user?.username, 'product.create', 'product', created.itemId, {
+    await tryLogAudit(req.user?.id, 'product.create', 'product', created.itemId, {
       name,
       groupId,
       minStock: minStock.value,
@@ -282,7 +274,7 @@ export const updateProduct = async (req, res) => {
     // (รหัสเดิม reuse ไม่ได้ตลอดกาล — ข้อ 9) จึงไม่มีแนวคิด "ย้ายกลุ่ม" ในการแก้ไขสินค้า
 
     await prisma.item.update({ where: { item_id: itemId }, data });
-    tryLogAudit(req.user?.username, 'product.update', 'product', itemId, { fields: Object.keys(data) });
+    await tryLogAudit(req.user?.id, 'product.update', 'product', itemId, { fields: Object.keys(data) });
 
     return res.json({ success: true, message: 'อัปเดตสินค้าเรียบร้อย' });
   } catch (error) {
@@ -305,7 +297,7 @@ export const deleteProduct = async (req, res) => {
     // soft delete เท่านั้น — FK ทั้งฐานตั้ง ON DELETE RESTRICT ลบจริงจะโดน database ปฏิเสธ
     // และประวัติ transaction ของสินค้าต้องอยู่ครบตลอดกาล
     await prisma.item.update({ where: { item_id: itemId }, data: { is_active: false } });
-    tryLogAudit(req.user?.username, 'product.archive', 'product', itemId);
+    await tryLogAudit(req.user?.id, 'product.archive', 'product', itemId);
 
     return res.json({ success: true, message: 'ปิดใช้งานสินค้าเรียบร้อย' });
   } catch (error) {
