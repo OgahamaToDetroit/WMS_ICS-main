@@ -3,9 +3,10 @@
 //
 // audit ย้ายมาฐานใหม่แล้วพร้อมเส้น auth (utils/audit.js ใช้ actor_id FK → users.id) —
 // จุดเชื่อม 2 เส้น: logAudit ส่ง req.user.id (ไม่ใช่ username) + createProduct ประทับ created_by = req.user.id
-// ที่ยังอยู่ฝั่งฐานเก่า (identifier.sqlite) ชั่วคราวตาม DATABASE.md ข้อ 12:
-// - getDashboardStats (ย้ายพร้อมเส้น transactions) → ตัวเลข dashboard กับหน้า products ยังไม่ตรงกันชั่วคราว = ตั้งใจ
-import db from '../db.js';
+//
+// getDashboardStats ย้ายมาฐานใหม่แล้ว (ส่วน 3) — reuse buildStockMap/countLowStock/localDayRange
+// จาก productRules.js และ DOCUMENT_INCLUDE/mapDocumentToTransaction จาก transactionRules.js
+// (activities = 10 ใบล่าสุด ทรงเดียวกับที่ /api/transactions ใช้) ไฟล์นี้จึงไม่แตะ server/db.js อีกต่อไป
 import { prisma } from '../prisma.js';
 import { tryLogAudit } from '../utils/audit.js';
 import {
@@ -14,12 +15,15 @@ import {
   buildNextDocNo,
   buildNextItemId,
   buildStockMap,
+  countLowStock,
+  localDayRange,
   mapItemToProduct,
   parseCost,
   parseMinStock,
   stockOf,
   toPositiveNumber
 } from '../utils/productRules.js';
+import { DOCUMENT_INCLUDE, mapDocumentToTransaction } from '../utils/transactionRules.js';
 
 const trimmedId = (value) => String(value || '').trim();
 
@@ -310,65 +314,82 @@ export const deleteProduct = async (req, res) => {
 // คือประตูหลังเลี่ยงระบบออกรหัสตามกลุ่ม (โค้ดเดิมดูได้จาก git history ถ้ามีเหตุต้องฟื้น)
 
 // ---------------------------------------------------------------------------
-// ด้านล่างนี้ยังอ่านฐานเก่า (identifier.sqlite) — ย้ายพร้อมเส้น transactions ตามข้อ 12
+// สถิติหน้า Homepage — ย้ายมาฐานใหม่แล้ว (ส่วน 3) ทรง JSON คงเดิมทั้ง 3 ก้อน (stats/activities/stockLevels)
+// ตามคำขอ "ทำให้เหมือนต้นฉบับก่อนย้ายฐาน" — ยกเว้น 2 จุดที่ทำตามเป๊ะไม่ได้ (กติกาที่ล็อกไปแล้วในเส้นอื่น):
+//   1) lowStockCount/stockLevels.minStock ไม่ default เป็น 10 เมื่อยังไม่ตั้งเกณฑ์ (คง NULL) — DATABASE.md ข้อ 6.8
+//      ผลคือ lowStockCount นับเฉพาะสินค้าที่ตั้งเกณฑ์แล้วและติด 'Low Stock' จริง (computeStatus เดียวกับหน้า
+//      Products/Inventory) ไม่ปนกับ 'Out of Stock' (ของหมด) แบบที่ SQL เดิมเคยนับรวมกันเป็นตัวเลขเดียว
+//   2) activities ใช้ mapDocumentToTransaction ตัวเดียวกับ /api/transactions (ทรงข้อมูลออกมาตรงกันทั้งแอป)
 // ---------------------------------------------------------------------------
 
-export const getDashboardStats = (req, res) => {
+export const getDashboardStats = async (req, res) => {
   try {
-    const today = new Date();
-    const offset = today.getTimezoneOffset() * 60000;
-    const localDate = new Date(today.getTime() - offset).toISOString().slice(0, 10);
+    // ขอบเขต "วันนี้" ตามเวลาเครื่อง server (แทน SQLite date(x,'localtime') เดิม — พฤติกรรมเดียวกัน)
+    const { start: startOfToday, end: startOfTomorrow } = localDayRange();
 
-    // รวมจำนวนชิ้นคงเหลือทั้งหมด นับเฉพาะสินค้าที่ยังใช้งานอยู่ (ตัวที่ปิดใช้งานไม่ถูกนับ)
-    const totalItemsRow = db.prepare(`
-      SELECT SUM(COALESCE(wb.stock_balance, 0)) as total
-      FROM items i
-      LEFT JOIN warehouse_balance wb ON wb.item_id = i.item_id
-      LEFT JOIN product_settings ps ON ps.item_id = i.item_id
-      WHERE COALESCE(ps.is_active, 1) = 1
-    `).get();
+    // ยอดคงเหลือของสินค้าที่ active ทุกตัว คำนวณครั้งเดียวใช้ร่วมกันทั้ง totalItems/lowStockCount/stockLevels
+    const activeItems = await prisma.item.findMany({
+      where: { is_active: true },
+      select: { item_id: true, name: true, min_stock: true }
+    });
+    // กรองด้วย relation (item.is_active) ให้ Prisma ทำ JOIN แทนการยัดรหัสสินค้าเป็น IN (...) ยาว 2,382 ตัว
+    // — เคยลองแบบ IN-list แล้วชนขีดจำกัดจำนวนพารามิเตอร์ของ SQLite (P2029) เพราะที่นี่ไม่แบ่งหน้าเหมือน getProducts
+    const sums = activeItems.length === 0
+      ? []
+      : await prisma.stockTransaction.groupBy({
+          by: ['item_id'],
+          where: { item: { is_active: true } },
+          _sum: { qty_change: true }
+        });
+    const stockMap = buildStockMap(sums);
 
-    const lowStockCountRow = db.prepare(`
-      SELECT COUNT(*) as count
-      FROM items i
-      LEFT JOIN warehouse_balance wb ON i.item_id = wb.item_id
-      LEFT JOIN product_settings ps ON ps.item_id = i.item_id
-      WHERE COALESCE(ps.is_active, 1) = 1
-        AND COALESCE(wb.stock_balance, 0) <= COALESCE(ps.min_stock, 10)
-    `).get();
+    const totalItems = activeItems.reduce((sum, item) => sum + stockOf(stockMap, item.item_id), 0);
+    const lowStockCount = countLowStock(activeItems, stockMap);
+    const stockLevels = activeItems
+      .map((item) => ({ sku: item.item_id, name: item.name, stock: stockOf(stockMap, item.item_id), minStock: item.min_stock ?? null }))
+      .sort((a, b) => a.stock - b.stock)
+      .slice(0, 10);
 
-    // input/output_date เก็บเป็น UTC (toISOString) ต้องแปลงเป็นเวลาท้องถิ่นก่อนตัดเทียบวัน
-    // ไม่งั้นรายการช่วงเย็น (หลัง 17:00 เวลาไทย) จะถูกนับเป็นของวันถัดไปตามปฏิทิน UTC
-    const inboundTodayRow = db.prepare(`SELECT SUM(quantity) as total FROM stock_in WHERE date(input_date, 'localtime') = ?`).get(localDate);
-    const outboundTodayRow = db.prepare(`SELECT SUM(quantity) as total FROM stock_out WHERE date(output_date, 'localtime') = ?`).get(localDate);
-
-    const activities = db.prepare(`
-      SELECT transactionId, type, requesterUsername, project, status, requestDate, resolvedDate, adminUsername
-      FROM wms_transactions
-      ORDER BY COALESCE(resolvedDate, requestDate) DESC
-      LIMIT 10
-    `).all();
-
-    const stockLevels = db.prepare(`
-      SELECT
-        i.item_id AS sku,
-        i.item_name AS name,
-        COALESCE(wb.stock_balance, 0) AS stock,
-        COALESCE(ps.min_stock, 10) AS minStock
-      FROM items i
-      LEFT JOIN warehouse_balance wb ON i.item_id = wb.item_id
-      LEFT JOIN product_settings ps ON ps.item_id = i.item_id
-      WHERE COALESCE(ps.is_active, 1) = 1
-      ORDER BY COALESCE(wb.stock_balance, 0) ASC
-      LIMIT 10
-    `).all();
+    const [inboundAgg, outboundAgg] = await Promise.all([
+      prisma.stockTransaction.aggregate({
+        _sum: { qty_change: true },
+        where: { type: 'IN', transaction_date: { gte: startOfToday, lt: startOfTomorrow } }
+      }),
+      prisma.stockTransaction.aggregate({
+        _sum: { qty_change: true },
+        where: { type: 'OUT', transaction_date: { gte: startOfToday, lt: startOfTomorrow } }
+      })
+    ]);
 
     const stats = {
-      totalItems: totalItemsRow?.total || 0,
-      lowStockCount: lowStockCountRow?.count || 0,
-      inboundToday: inboundTodayRow?.total || 0,
-      outboundToday: outboundTodayRow?.total || 0
+      totalItems,
+      lowStockCount,
+      inboundToday: inboundAgg._sum.qty_change ?? 0,
+      // OUT เก็บเป็นค่าติดลบเสมอ — พลิกกลับเป็นบวกให้ตรงทรงเดิม (Homepage เติมเครื่องหมาย "-" เองใน JSX)
+      outboundToday: -(outboundAgg._sum.qty_change ?? 0)
     };
+
+    // 10 รายการล่าสุด (เรียงตาม "แตะล่าสุด" คือ resolved_at ถ้ามี ไม่งั้น created_at — ตรงกับ SQL เดิม
+    // ที่ ORDER BY COALESCE(resolvedDate, requestDate) DESC) — ดึงมาเผื่อ 30 ใบกันเคสใบเก่าที่เพิ่งปิดตกไป
+    const recentDocs = await prisma.stockDocument.findMany({
+      include: DOCUMENT_INCLUDE,
+      orderBy: { created_at: 'desc' },
+      take: 30
+    });
+    const activities = recentDocs
+      .map(mapDocumentToTransaction)
+      .sort((a, b) => new Date(b.resolvedDate ?? b.requestDate) - new Date(a.resolvedDate ?? a.requestDate))
+      .slice(0, 10)
+      .map((t) => ({
+        transactionId: t.transactionId,
+        type: t.type,
+        requesterUsername: t.requesterUsername,
+        project: t.project,
+        status: t.status,
+        requestDate: t.requestDate,
+        resolvedDate: t.resolvedDate,
+        adminUsername: t.adminUsername
+      }));
 
     return res.status(200).json({ success: true, stats, activities, stockLevels });
   } catch (error) {

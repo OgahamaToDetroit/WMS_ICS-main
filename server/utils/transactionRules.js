@@ -9,6 +9,24 @@
 //   status PENDING/CONFIRMED/CANCELLED (3 ค่า)  →  Pending/Approved/Partial/Rejected/Cancelled (5 ค่า)
 // ที่มา: DATABASE.md ข้อ 6 (ข้อ 1,3) + Newdatabase/docs/data_dictionary.md §6, §6.1
 
+// ⚠️ ต้อง include requestItems ทุกครั้งที่ query StockDocument แล้วจะเอาไป mapDocumentToTransaction —
+// ไม่งั้นใบ ISSUE ที่ CONFIRMED จะกลายเป็น 'Partial' + items ว่างเงียบๆ (ดูคำเตือนใน deriveDocStatus ด้านล่าง)
+// อยู่ตรงนี้ (ไม่ใช่ในตัว controller ใดตัวหนึ่ง) เพราะมีมากกว่า 1 controller ต้องใช้ pattern เดียวกัน
+// (transactionController: list/history · productController: dashboard activities) — แชร์ไว้กันลืม include ซ้ำ
+export const DOCUMENT_INCLUDE = {
+  requester: { select: { username: true } },
+  resolver: { select: { username: true } },
+  creator: { select: { username: true } },
+  requestItems: {
+    include: { item: { select: { name: true, image_url: true } } },
+    orderBy: { id: 'asc' }
+  },
+  transactions: {
+    include: { item: { select: { name: true, image_url: true } } },
+    orderBy: { id: 'asc' }
+  }
+};
+
 // ---------------------------------------------------------------------------
 // enum ชนิดใบ: หัวใบใหม่ → ประเภทที่หน้าเว็บรู้จัก
 // ---------------------------------------------------------------------------

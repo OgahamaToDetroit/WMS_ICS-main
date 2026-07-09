@@ -8,7 +8,7 @@
 //            (ยังไม่แตะยอด) → สร้าง stock_transactions (type OUT) ตอนคนคลังยืนยันเท่านั้น
 import { prisma } from '../prisma.js';
 import { tryLogAudit } from '../utils/audit.js';
-import { mapDocumentToTransaction, resolveOutcome } from '../utils/transactionRules.js';
+import { DOCUMENT_INCLUDE, mapDocumentToTransaction, resolveOutcome } from '../utils/transactionRules.js';
 import { buildDocNoPrefix, buildNextDocNo, parseMinStock } from '../utils/productRules.js';
 
 const CODE_RETRY_LIMIT = 3; // ชน doc_no ซ้ำ (P2002) แล้ววนออกเลขใหม่ ไม่ล้มทั้งคำขอ
@@ -46,22 +46,6 @@ const generateDocNo = async (client, docType, date) => {
     select: { doc_no: true }
   });
   return buildNextDocNo(prefix, latest?.doc_no ?? null);
-};
-
-// ⚠️ ต้อง load requestItems ทุกครั้ง ไม่งั้นใบ ISSUE ที่ CONFIRMED จะกลายเป็น 'Partial' + items ว่างเงียบๆ
-// (ดูคำเตือนใน transactionRules.deriveDocStatus) · transactions ใช้แสดงรายการของใบ RECEIVE
-const DOCUMENT_INCLUDE = {
-  requester: { select: { username: true } },
-  resolver: { select: { username: true } },
-  creator: { select: { username: true } },
-  requestItems: {
-    include: { item: { select: { name: true, image_url: true } } },
-    orderBy: { id: 'asc' }
-  },
-  transactions: {
-    include: { item: { select: { name: true, image_url: true } } },
-    orderBy: { id: 'asc' }
-  }
 };
 
 const handleError = (res, err) => {

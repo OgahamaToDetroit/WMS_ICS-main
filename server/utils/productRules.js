@@ -38,6 +38,22 @@ export const buildStockMap = (groupedSums) =>
 
 export const stockOf = (stockMap, itemId) => stockMap.get(itemId) ?? 0;
 
+// นับสินค้าที่ Low Stock — ใช้กติกาเดียวกับ computeStatus (ห้าม default min_stock=NULL เป็น 10)
+// สำหรับ getDashboardStats: items คือ [{item_id, min_stock}], stockMap มาจาก buildStockMap
+export const countLowStock = (items, stockMap) =>
+  items.filter((item) => computeStatus(stockOf(stockMap, item.item_id), item.min_stock) === 'Low Stock').length;
+
+// ---------------------------------------------------------------------------
+// ช่วงเวลา "วันนี้" ตามเวลาท้องถิ่นของเครื่อง server — ใช้กรอง transaction_date
+// คืน [startOfToday, startOfTomorrow) เป็น Date object (เทียบแบบ gte/lt ใน Prisma ได้ตรงๆ)
+// เดิมฝั่งฐานเก่าใช้ SQLite date(x,'localtime') เทียบ string — ตัวนี้ทำสิ่งเดียวกันด้วยช่วงเวลา
+// ---------------------------------------------------------------------------
+export const localDayRange = (referenceDate = new Date()) => {
+  const start = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, end };
+};
+
 // ---------------------------------------------------------------------------
 // ฝั่งรับค่าเข้า (JSON จากฟอร์ม → ค่าที่จะเขียนลงฐาน)
 // ---------------------------------------------------------------------------
