@@ -1,0 +1,198 @@
+// เทสต์แบบเบา (node --test) เฉพาะ "กติกา/ล่าม" ของเส้น transactions ที่ database บังคับเองไม่ได้
+// — ไม่ต้องต่อ database เพราะแยกไว้เป็น pure function ใน utils/transactionRules.js
+// รัน: npm test (ในโฟลเดอร์ server/)
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  docTypeToTxType,
+  deriveDocStatus,
+  deriveItemStatus,
+  mapRequestItem,
+  mapReceiveItem,
+  mapDocumentToTransaction
+} from '../utils/transactionRules.js';
+
+// ---------------------------------------------------------------------------
+// enum ชนิดใบ: RECEIVE→INBOUND, ISSUE→OUTBOUND (หน้าเว็บกรอง/แสดงด้วยค่าเดิม)
+// ---------------------------------------------------------------------------
+test('docTypeToTxType: RECEIVE→INBOUND, ISSUE→OUTBOUND', () => {
+  assert.equal(docTypeToTxType('RECEIVE'), 'INBOUND');
+  assert.equal(docTypeToTxType('ISSUE'), 'OUTBOUND');
+});
+
+// ---------------------------------------------------------------------------
+// สถานะใบ 3 ค่า → 5 ค่า — จุดที่ผิดแล้วเจ็บสุด (ป้ายผิด = คนคลังเข้าใจสถานะใบผิด)
+// ---------------------------------------------------------------------------
+test('deriveDocStatus: RECEIVE = Approved เสมอ (รับเข้าจบขั้นเดียว ไม่มี partial/reject)', () => {
+  assert.equal(deriveDocStatus({ doc_type: 'RECEIVE', status: 'CONFIRMED' }), 'Approved');
+});
+
+test('deriveDocStatus: ISSUE PENDING = Pending (ยังรออนุมัติ)', () => {
+  assert.equal(deriveDocStatus({ doc_type: 'ISSUE', status: 'PENDING' }, []), 'Pending');
+});
+
+test('deriveDocStatus: ISSUE CONFIRMED ครบทุกบรรทัด = Approved', () => {
+  const items = [
+    { qty_requested: 10, qty_confirmed: 10 },
+    { qty_requested: 5, qty_confirmed: 5 }
+  ];
+  assert.equal(deriveDocStatus({ doc_type: 'ISSUE', status: 'CONFIRMED' }, items), 'Approved');
+});
+
+test('deriveDocStatus: ISSUE CONFIRMED ให้ไม่ครบบางบรรทัด = Partial', () => {
+  const items = [
+    { qty_requested: 10, qty_confirmed: 7 }, // ให้ไม่ครบ
+    { qty_requested: 5, qty_confirmed: 5 }
+  ];
+  assert.equal(deriveDocStatus({ doc_type: 'ISSUE', status: 'CONFIRMED' }, items), 'Partial');
+});
+
+test('deriveDocStatus: ISSUE CANCELLED โดยผู้ขอเอง (resolved_by == requested_by) = Cancelled', () => {
+  const doc = { doc_type: 'ISSUE', status: 'CANCELLED', requested_by: 3, resolved_by: 3 };
+  assert.equal(deriveDocStatus(doc, []), 'Cancelled');
+});
+
+test('deriveDocStatus: ISSUE CANCELLED โดยคนคลัง (resolved_by != requested_by) = Rejected', () => {
+  // รวมเคส "อนุมัติ 0 ทุกบรรทัด" ที่ถูกบันทึกเป็น CANCELLED + note โดยคนคลัง (DATABASE.md ข้อ 6.3)
+  const doc = { doc_type: 'ISSUE', status: 'CANCELLED', requested_by: 3, resolved_by: 1 };
+  assert.equal(deriveDocStatus(doc, []), 'Rejected');
+});
+
+// ---------------------------------------------------------------------------
+// สถานะรายบรรทัด
+// ---------------------------------------------------------------------------
+test('deriveItemStatus: PENDING→Pending, ครบ→Approved, บางส่วน→Partial, ศูนย์→Rejected', () => {
+  assert.equal(deriveItemStatus(10, null, 'PENDING'), 'Pending');
+  assert.equal(deriveItemStatus(10, 10, 'CONFIRMED'), 'Approved');
+  assert.equal(deriveItemStatus(10, 4, 'CONFIRMED'), 'Partial');
+  assert.equal(deriveItemStatus(10, 0, 'CONFIRMED'), 'Rejected'); // ถูกตัดเหลือศูนย์ในใบอนุมัติบางส่วน
+});
+
+test('deriveItemStatus: ใบ CANCELLED ลูกทุกบรรทัดเป็น Rejected (approvedQty=0)', () => {
+  assert.equal(deriveItemStatus(10, null, 'CANCELLED'), 'Rejected');
+});
+
+// ---------------------------------------------------------------------------
+// แปลงรายการ: ISSUE (จาก request item) vs RECEIVE (จาก transaction)
+// ---------------------------------------------------------------------------
+test('mapRequestItem: ทรง item เดิมครบ + approvedQty=0 ตอนยังไม่ยืนยัน', () => {
+  const item = mapRequestItem(
+    { item_id: '02001', qty_requested: 8, qty_confirmed: null, item: { name: 'ปลั๊ก', image_url: null } },
+    'PENDING'
+  );
+  assert.deepEqual(item, {
+    productId: '02001',
+    sku: '02001',
+    productName: 'ปลั๊ก',
+    imageUrl: '', // NULL → '' ตามทรงเดิม
+    requestedQty: 8,
+    approvedQty: 0,
+    status: 'Pending'
+  });
+});
+
+test('mapReceiveItem: requested = approved = qty_change, status Approved', () => {
+  const item = mapReceiveItem({ item_id: '19001', qty_change: 12, item: { name: 'สว่าน', image_url: '/u/a.png' } });
+  assert.deepEqual(item, {
+    productId: '19001',
+    sku: '19001',
+    productName: 'สว่าน',
+    imageUrl: '/u/a.png',
+    requestedQty: 12,
+    approvedQty: 12,
+    status: 'Approved'
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ล่ามหลัก: StockDocument → transaction ทรงเดิม (ครบทุก field ที่ frontend อ่าน)
+// ---------------------------------------------------------------------------
+test('mapDocumentToTransaction: ใบ ISSUE ยัง PENDING — ผู้ขอ/project/รายการครบ', () => {
+  const doc = {
+    id: 42,
+    doc_no: 'ISS-6907-0001',
+    doc_type: 'ISSUE',
+    status: 'PENDING',
+    note: null,
+    project: 'ซ่อมสายพาน A',
+    created_at: new Date('2026-07-09T03:00:00Z'),
+    resolved_at: null,
+    requested_by: 3,
+    resolved_by: null,
+    requester: { username: 'operator1' },
+    resolver: null,
+    creator: null,
+    requestItems: [
+      { item_id: '02001', qty_requested: 8, qty_confirmed: null, item: { name: 'ปลั๊ก', image_url: null } }
+    ]
+  };
+  const tx = mapDocumentToTransaction(doc);
+  assert.equal(tx.id, 42);
+  assert.equal(tx.transactionId, 'ISS-6907-0001');
+  assert.equal(tx.type, 'OUTBOUND');
+  assert.equal(tx.status, 'Pending');
+  assert.equal(tx.requesterUsername, 'operator1');
+  assert.equal(tx.adminUsername, null); // ยังไม่มีคนปิดใบ
+  assert.equal(tx.project, 'ซ่อมสายพาน A');
+  assert.equal(tx.adminMessage, null);
+  assert.equal(tx.resolvedDate, null);
+  assert.equal(tx.items.length, 1);
+  assert.equal(tx.items[0].status, 'Pending');
+});
+
+test('mapDocumentToTransaction: ใบ ISSUE CONFIRMED บางส่วน — Partial + ผู้ปิด + เหตุผล', () => {
+  const doc = {
+    id: 43,
+    doc_no: 'ISS-6907-0002',
+    doc_type: 'ISSUE',
+    status: 'CONFIRMED',
+    note: 'สต็อกไม่พอ จ่ายได้บางส่วน',
+    project: 'งาน B',
+    created_at: new Date('2026-07-09T03:00:00Z'),
+    resolved_at: new Date('2026-07-09T05:00:00Z'),
+    requested_by: 3,
+    resolved_by: 1,
+    requester: { username: 'operator1' },
+    resolver: { username: 'admin' },
+    creator: null,
+    requestItems: [
+      { item_id: '02001', qty_requested: 10, qty_confirmed: 6, item: { name: 'ปลั๊ก', image_url: null } }
+    ]
+  };
+  const tx = mapDocumentToTransaction(doc);
+  assert.equal(tx.status, 'Partial');
+  assert.equal(tx.adminUsername, 'admin');
+  assert.equal(tx.adminMessage, 'สต็อกไม่พอ จ่ายได้บางส่วน');
+  assert.equal(tx.items[0].requestedQty, 10);
+  assert.equal(tx.items[0].approvedQty, 6);
+  assert.equal(tx.items[0].status, 'Partial');
+});
+
+test('mapDocumentToTransaction: ใบ RECEIVE — INBOUND/Approved, ผู้สร้าง = ผู้ขอ = ผู้ปิด, รายการจาก transaction', () => {
+  const doc = {
+    id: 7,
+    doc_no: 'REC-6907-0003',
+    doc_type: 'RECEIVE',
+    status: 'CONFIRMED',
+    note: 'ยอดเริ่มต้นจากการสร้างสินค้าใหม่',
+    project: null,
+    created_at: new Date('2026-07-09T03:00:00Z'),
+    resolved_at: null,
+    requested_by: null,
+    resolved_by: null,
+    creator: { username: 'admin' },
+    requester: null,
+    resolver: null,
+    requestItems: [], // RECEIVE ไม่มีคำขอ
+    transactions: [{ item_id: '01262', qty_change: 5, item: { name: 'สินค้าใหม่', image_url: null } }]
+  };
+  const tx = mapDocumentToTransaction(doc);
+  assert.equal(tx.type, 'INBOUND');
+  assert.equal(tx.status, 'Approved');
+  assert.equal(tx.requesterUsername, 'admin');
+  assert.equal(tx.adminUsername, 'admin');
+  assert.equal(tx.items.length, 1);
+  assert.equal(tx.items[0].requestedQty, 5);
+  assert.equal(tx.items[0].approvedQty, 5);
+  assert.equal(tx.items[0].status, 'Approved');
+});
