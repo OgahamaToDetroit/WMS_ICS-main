@@ -8,6 +8,7 @@
 //            (ยังไม่แตะยอด) → สร้าง stock_transactions (type OUT) ตอนคนคลังยืนยันเท่านั้น
 import { prisma } from '../prisma.js';
 import { tryLogAudit } from '../utils/audit.js';
+import { broadcast } from '../events.js';
 import { DOCUMENT_INCLUDE, mapDocumentToTransaction, resolveOutcome } from '../utils/transactionRules.js';
 import { buildDocNoPrefix, buildNextDocNo, parseMinStock } from '../utils/productRules.js';
 
@@ -158,6 +159,7 @@ export const createOutboundRequest = async (req, res) => {
       project: trimmedProject,
       itemCount: items.length
     });
+    broadcast('transactions'); // ใบใหม่ PENDING ยังไม่แตะยอด — ไม่ต้องยิง products
     res.status(201).json({ success: true, message: 'ส่งคำขอเบิกแบบชุดสำเร็จ', transactionId: created.docNo });
   } catch (err) {
     handleError(res, err);
@@ -243,6 +245,8 @@ export const createInboundTransaction = async (req, res) => {
       quantity: inboundQty,
       docNo: created.docNo
     });
+    broadcast('transactions');
+    broadcast('products'); // รับเข้าจบขั้นเดียว ยอดคงเหลือเปลี่ยนแล้ว
     res.status(201).json({ success: true, message: 'บันทึกรับเข้าสำเร็จ', transactionId: created.docNo });
   } catch (err) {
     handleError(res, err);
@@ -326,6 +330,8 @@ export const resolveTransaction = async (req, res) => {
       docNo: result.doc.doc_no,
       docStatus: result.docStatus
     });
+    broadcast('transactions');
+    broadcast('products'); // ยืนยันแล้วถึงมีแถว OUT — ยอดคงเหลือเพิ่งเปลี่ยน ณ ตอนนี้
     res.json({ success: true, message: 'พิจารณาใบเบิกเสร็จสิ้น' });
   } catch (err) {
     handleError(res, err);
@@ -367,6 +373,7 @@ export const cancelTransaction = async (req, res) => {
       }
     });
     await tryLogAudit(actorId, 'transaction.cancel', 'document', doc.id, { docNo: doc.doc_no });
+    broadcast('transactions'); // PENDING ไม่มีแถวยอด — ยกเลิกจึงไม่กระทบ products
     res.json({ success: true, message: 'ยกเลิกคำขอเรียบร้อย' });
   } catch (err) {
     handleError(res, err);

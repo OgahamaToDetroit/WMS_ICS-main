@@ -8,6 +8,7 @@ import transactionRoutes from './routes/transactionRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import productRoutes from './routes/productRoutes.js';
 import uploadRoutes from './upload.js';
+import eventsRouter from './events.js';
 import { config } from './config.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,5 +29,6 @@ app.use('/api', transactionRoutes);
 app.use('/api', userRoutes);
 app.use('/api', productRoutes);
 app.use('/api', uploadRoutes);
+app.use('/api', eventsRouter);
 
 app.listen(config.port, () => console.log(`🚀 Server running on port ${config.port}`));

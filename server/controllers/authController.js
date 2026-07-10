@@ -10,6 +10,7 @@ import { tryLogAudit } from '../utils/audit.js';
 import { sendEmail } from '../utils/sendEmail.js';
 import { config } from '../config.js';
 import { prisma } from '../prisma.js';
+import { broadcast } from '../events.js';
 
 const RESET_TOKEN_TTL_MS = 1000 * 60 * 30;
 
@@ -76,6 +77,7 @@ export const register = async (req, res) => {
   const hashedPassword = await bcrypt.hash(password, 10);
   const newUser = await createUser({ username, email, password_hash: hashedPassword, role: 'Operator', status: 'Pending' });
   await tryLogAudit(newUser.id, 'auth.register', 'user', newUser.id, { status: 'Pending' });
+  broadcast('users'); // กระดิ่งฝั่ง Admin เด้งทันที — ยิงก่อนขั้นส่งเมลที่ช้า/ล่มได้ (ข้อมูลเปลี่ยนจริงแล้ว)
 
   await sendEmail(email, 'WMS - ยืนยันการสมัครสมาชิก (รอผลอนุมัติ)', `
     <h2>สวัสดีคุณ ${username}</h2>

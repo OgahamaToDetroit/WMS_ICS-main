@@ -9,6 +9,7 @@
 // (activities = 10 ใบล่าสุด ทรงเดียวกับที่ /api/transactions ใช้) ไฟล์นี้จึงไม่แตะ server/db.js อีกต่อไป
 import { prisma } from '../prisma.js';
 import { tryLogAudit } from '../utils/audit.js';
+import { broadcast } from '../events.js';
 import {
   GROUP_CAPACITY,
   buildDocNoPrefix,
@@ -223,6 +224,9 @@ export const createProduct = async (req, res) => {
       receiveDocNo: created.docNo
     });
 
+    broadcast('products');
+    if (created.docNo) broadcast('transactions'); // มียอดตั้งต้น = ออกใบ RECEIVE ให้อัตโนมัติ 1 ใบ
+
     return res.status(201).json({
       success: true,
       message: 'สร้างสินค้าเรียบร้อย',
@@ -280,6 +284,7 @@ export const updateProduct = async (req, res) => {
     await prisma.item.update({ where: { item_id: itemId }, data });
     await tryLogAudit(req.user?.id, 'product.update', 'product', itemId, { fields: Object.keys(data) });
 
+    broadcast('products');
     return res.json({ success: true, message: 'อัปเดตสินค้าเรียบร้อย' });
   } catch (error) {
     console.error('updateProduct Error:', error);
@@ -303,6 +308,7 @@ export const deleteProduct = async (req, res) => {
     await prisma.item.update({ where: { item_id: itemId }, data: { is_active: false } });
     await tryLogAudit(req.user?.id, 'product.archive', 'product', itemId);
 
+    broadcast('products');
     return res.json({ success: true, message: 'ปิดใช้งานสินค้าเรียบร้อย' });
   } catch (error) {
     console.error('deleteProduct Error:', error);

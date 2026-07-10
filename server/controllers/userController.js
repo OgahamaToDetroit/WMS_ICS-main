@@ -15,6 +15,7 @@ import { sendEmail } from '../utils/sendEmail.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { config } from '../config.js';
+import { broadcast } from '../events.js';
 
 export const getUsersList = async (req, res) => {
   // ไม่ส่ง password_hash กลับหน้าเว็บ · avatarUrl ดิบ (NULL → '' ให้ตรงทรงเดิมที่ default เป็น '')
@@ -49,6 +50,7 @@ export const updateUserStatus = async (req, res) => {
 
     const user = await updateUser(userId, { status });
     await tryLogAudit(req.user?.id, 'user.status_update', 'user', userId, { status });
+    broadcast('users'); // ยิงทันทีหลังเขียนฐานสำเร็จ — ไม่รอขั้นส่งเมลที่ช้า/ล่มได้
 
     const subject = status === 'Active' ? 'WMS - บัญชีของคุณได้รับการอนุมัติแล้ว 🎉' : 'WMS - บัญชีของคุณถูกปฏิเสธ';
     const htmlMessage = status === 'Active'
@@ -80,6 +82,7 @@ export const updateUserRole = async (req, res) => {
 
   await updateUser(userId, { role });
   await tryLogAudit(req.user?.id, 'user.role_update', 'user', userId, { role });
+  broadcast('users'); // จุดนี้ reference ไม่ยิง — ของเรายิงให้ครบ: ตาราง users เปลี่ยนเมื่อไหร่ก็ควรมีสัญญาณ
   return res.json({ success: true });
 };
 
@@ -102,6 +105,7 @@ export const deleteUser = async (req, res) => {
 
   await deactivateUser(userId);
   await tryLogAudit(req.user?.id, 'user.delete', 'user', userId, { username: targetUser.username });
+  broadcast('users');
   res.json({ success: true, message: 'ลบผู้ใช้งานสำเร็จ' });
 };
 
