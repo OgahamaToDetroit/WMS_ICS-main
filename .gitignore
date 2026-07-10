@@ -16,6 +16,10 @@ dist-ssr
 !.env.example
 !**/.env.example
 
+# เวอร์ชันอ้างอิงจากเจ้าของ (แอปที่พัฒนาต่อบนสถาปัตยกรรมเก่า) — ใช้เป็นสเปคอ่านอย่างเดียว
+# ข้างในมี secrets จริง (server/.env) + node_modules + db ทดลอง → ห้าม commit ทั้งโฟลเดอร์
+wms-ics-reference/
+
 # Runtime data
 server/identifier.sqlite
 server/identifier.sqlite-shm
