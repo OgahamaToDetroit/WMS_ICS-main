@@ -67,6 +67,7 @@ model User {
   transactions       StockTransaction[]
   resetTokens        PasswordResetToken[]
   auditLogs          AuditLog[]
+  pushSubscriptions  PushSubscription[]
 
   @@map("users")
 }
@@ -83,6 +84,24 @@ model PasswordResetToken {
 
   @@index([user_id])
   @@map("password_reset_tokens")
+}
+
+// อุปกรณ์ที่สมัครรับ Web Push (DATABASE.md ข้อ 6.16) — ผูก user_id FK ไม่ใช่ username แบบ reference
+// 1 อุปกรณ์ = 1 แถว (endpoint unique — ชนกัน = อัปเดตทับ เครื่องเดิมเปลี่ยนเจ้าของได้)
+// ⚠️ ข้อยกเว้นกติกา soft delete (ตั้งใจ): endpoint ที่ตายแล้ว (ส่งเจอ 410/404) ลบแถวทิ้งจริง
+// — นี่คือ "ที่อยู่อุปกรณ์ชั่วคราว" ที่ browser ออกให้ ไม่ใช่ข้อมูลธุรกิจ เก็บไว้มีแต่ส่งซ้ำเปลือง
+model PushSubscription {
+  id           Int      @id @default(autoincrement())
+  user_id      Int
+  endpoint     String   @unique // ที่อยู่ปลายทางของอุปกรณ์ (push service ของ browser ออกให้)
+  subscription String // JSON เต็มจาก browser (มี endpoint + กุญแจเข้ารหัส p256dh/auth)
+  created_at   DateTime @default(now())
+
+  // Restrict ตามธรรมเนียมทั้งฐาน — ลบ user ไม่ได้อยู่แล้ว (soft delete) แถวนี้ลบจริงได้เฉพาะเคส endpoint ตาย
+  user User @relation(fields: [user_id], references: [id], onDelete: Restrict)
+
+  @@index([user_id])
+  @@map("push_subscriptions")
 }
 
 // บันทึกการกระทำในระบบ (audit trail) — ใครทำอะไรกับอะไรเมื่อไหร่

@@ -15,6 +15,13 @@ export const config = {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   },
+  // Web Push (VAPID) — คู่กุญแจประจำเซิร์ฟเวอร์เรา ใช้ยืนยันตัวกับ push service ของ browser
+  // ไม่ตั้ง = ฟีเจอร์ push ปิดตัวเองพร้อม warn แบบเดียวกับ email (ดู server/push.js) ห้าม commit key จริง
+  vapid: {
+    publicKey: process.env.VAPID_PUBLIC_KEY || '',
+    privateKey: process.env.VAPID_PRIVATE_KEY || '',
+    subject: process.env.VAPID_SUBJECT || 'mailto:admin@wms.local'
+  },
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   bootstrapAdmin: {
     username: process.env.BOOTSTRAP_ADMIN_USERNAME || 'admin',

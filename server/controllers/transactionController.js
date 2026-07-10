@@ -9,6 +9,8 @@
 import { prisma } from '../prisma.js';
 import { tryLogAudit } from '../utils/audit.js';
 import { broadcast } from '../events.js';
+import { sendPushToUser } from '../push.js';
+import { buildResolvePush } from '../utils/pushRules.js';
 import { DOCUMENT_INCLUDE, canMarkPickedUp, mapDocumentToTransaction, resolveOutcome } from '../utils/transactionRules.js';
 import { buildDocNoPrefix, buildNextDocNo, parseMinStock } from '../utils/productRules.js';
 
@@ -321,7 +323,12 @@ export const resolveTransaction = async (req, res) => {
           resolved_at: now
         }
       });
-      return { doc, docStatus: outcome.docStatus };
+      // จับคู่ "ขอเท่าไหร่/ได้เท่าไหร่" ต่อบรรทัด ไว้สร้างข้อความ push หลังจบ transaction
+      const pushLines = doc.requestItems.map((ri) => ({
+        qtyRequested: ri.qty_requested,
+        qtyConfirmed: confirmedMap.get(ri.item_id) ?? 0
+      }));
+      return { doc, docStatus: outcome.docStatus, note: outcome.message, pushLines };
     });
 
     if (result?.notFound) return res.status(404).json({ success: false, message: 'ไม่พบรายการ' });
@@ -332,6 +339,17 @@ export const resolveTransaction = async (req, res) => {
     });
     broadcast('transactions');
     broadcast('products'); // ยืนยันแล้วถึงมีแถว OUT — ยอดคงเหลือเพิ่งเปลี่ยน ณ ตอนนี้
+
+    // แจ้งผลถึงอุปกรณ์ผู้ขอแม้ปิดแอปอยู่ (ข้อ 6.16 — จุดเดียวที่ยิง push ตาม reference:
+    // ใบใหม่เข้าให้กระดิ่ง SSE จัดการพอ) · ยิงแบบไม่รอ + .catch ทิ้ง: push ช้า/ล่ม
+    // ต้องไม่หน่วงและไม่ล้ม response ของงานที่เขียนฐานสำเร็จไปแล้ว
+    sendPushToUser(result.doc.requested_by, buildResolvePush({
+      docNo: result.doc.doc_no,
+      docStatus: result.docStatus,
+      lines: result.pushLines,
+      note: result.note
+    })).catch(() => {});
+
     res.json({ success: true, message: 'พิจารณาใบเบิกเสร็จสิ้น' });
   } catch (err) {
     handleError(res, err);
