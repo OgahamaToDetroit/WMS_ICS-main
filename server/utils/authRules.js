@@ -14,6 +14,17 @@ export const normalizeRole = (role) => (VALID_ROLES.includes(role) ? role : 'Vie
 export const normalizeStatus = (status) => (VALID_STATUSES.includes(status) ? status : 'Pending');
 
 // ---------------------------------------------------------------------------
+// 1 บัญชี = 1 อุปกรณ์ (DATABASE.md ข้อ 6.15): login สำเร็จออกเลข session ใหม่เขียนทับของเดิม
+// token ต้องพก claim `sid` ตรงกับ users.session_id ค่าล่าสุดเท่านั้น (เครื่องล่าสุดที่ login ชนะ)
+// เข้มกว่า reference โดยตั้งใจ: token ที่ไม่มี sid (ออกก่อนมีฟีเจอร์) = ใช้ไม่ได้ทันที
+// ---------------------------------------------------------------------------
+export const checkSession = (tokenSid, currentSessionId) => {
+  if (!tokenSid) return 'MISSING_SID'; // token รุ่นเก่า → ทุกคน login ใหม่หนึ่งครั้งหลัง deploy (รับไว้แล้ว)
+  if (tokenSid !== currentSessionId) return 'REPLACED'; // มี login ใหม่กว่า — รวมเคส session_id ยัง NULL (เช่นฐานถูกรีเซ็ต)
+  return 'OK';
+};
+
+// ---------------------------------------------------------------------------
 // เงื่อนไข login สองแกน (DATABASE.md ข้อ 6.5): login ได้ต้อง status=Active "และ" is_active=true
 // สองแกนคนละหน้าที่: status = วงจรอนุมัติบัญชี (สมัคร→รอ→อนุมัติ) · is_active = ปลดระวาง (soft delete)
 // ---------------------------------------------------------------------------

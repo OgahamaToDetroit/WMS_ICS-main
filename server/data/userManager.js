@@ -89,6 +89,11 @@ export const updateUser = async (id, fields = {}) => {
   return prisma.user.update({ where: { id: numericId }, data });
 };
 
+// 1 บัญชี = 1 อุปกรณ์ (DATABASE.md ข้อ 6.15): เขียนทับเลข session ทุกครั้งที่ login สำเร็จ
+// → token ของเครื่องเก่าที่พก sid เดิมจะไม่ตรงค่าล่าสุด ถูกตัดออกที่ authMiddleware/SSE ทันที
+export const setSessionId = async (id, sessionId) =>
+  prisma.user.update({ where: { id: Number(id) }, data: { session_id: sessionId } });
+
 // ลบ = soft delete เท่านั้น (DATABASE.md ข้อ 5) — FK ทุกเส้นตั้ง ON DELETE RESTRICT
 // hard delete ผู้ใช้ที่เคย login/สร้างใบ จะโดน database เตะ (P2003) อยู่แล้ว
 // ผลข้างเคียงที่ตั้งใจ: username/email ของแถวนี้ถูกจอง (unique) ต่อไป — สมัครซ้ำชื่อเดิมไม่ได้

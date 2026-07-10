@@ -4,7 +4,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { getUserById, getUserByUsername, getUserByEmail, createUser, updateUser } from '../data/userManager.js';
+import { getUserById, getUserByUsername, getUserByEmail, createUser, updateUser, setSessionId } from '../data/userManager.js';
 import { canLogin, isResetTokenUsable, loginRejectionMessage, toAuthUser } from '../utils/authRules.js';
 import { tryLogAudit } from '../utils/audit.js';
 import { sendEmail } from '../utils/sendEmail.js';
@@ -16,8 +16,9 @@ const RESET_TOKEN_TTL_MS = 1000 * 60 * 30;
 
 const hashResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
-const signToken = (user) => jwt.sign(
-  { id: user.id, username: user.username, role: user.role },
+// sid = เลข session ประจำอุปกรณ์ (ข้อ 6.15) — middleware เทียบกับ users.session_id ทุกคำขอ
+const signToken = (user, sessionId) => jwt.sign(
+  { id: user.id, username: user.username, role: user.role, sid: sessionId },
   config.jwtSecret,
   { expiresIn: '1d' }
 );
@@ -45,7 +46,11 @@ export const login = async (req, res) => {
     return res.status(403).json({ success: false, message: rejection });
   }
 
-  const token = signToken(user);
+  // 1 บัญชี = 1 อุปกรณ์ (ข้อ 6.15): ออกเลข session ใหม่ทับของเดิมทุกครั้งที่ login
+  // → token ของเครื่องเก่า (sid ไม่ตรงค่าล่าสุด) ตายทันที เครื่องล่าสุดชนะ
+  const sessionId = crypto.randomBytes(16).toString('hex');
+  await setSessionId(user.id, sessionId);
+  const token = signToken(user, sessionId);
   await tryLogAudit(user.id, 'auth.login', 'user', user.id);
 
   return res.status(200).json({

@@ -163,7 +163,11 @@
     ค่าล่าสุดถือว่าตายทันที (อุปกรณ์ล่าสุดที่ login ชนะ เครื่องเก่าหลุด) · เหตุผล: กันการแชร์บัญชี
     ซึ่งทำลาย audit trail (`created_by`/`resolved_by` จะไม่รู้ว่าใครกดจริง — ปรัชญาเดียวกับข้อ 7)
     · NULL = ยังไม่เคย login หลังมีฟีเจอร์ · token รุ่นเก่าที่ไม่มี `sid` = ใช้ไม่ได้ ทุกคน login ใหม่
-    หนึ่งครั้งหลัง deploy (ฐาน dev มีแต่คนทดลอง รับได้)
+    หนึ่งครั้งหลัง deploy (ฐาน dev มีแต่คนทดลอง รับได้) · **ทำจริงแล้ว (เฟส 2, migration
+    `20260710132934`):** กติกาแยกเทสต์ได้ที่ `authRules.checkSession` · ด่านตรวจครอบทั้ง
+    `verifyAuth` และ `/api/events` · token ไม่มี sid → 403 ข้อความเดียวกับ token เสีย /
+    sid ไม่ตรง → 401 + `code: SESSION_REPLACED` (หน้าเว็บเฟส 3 ใช้แยกเคส "โดนเครื่องอื่นเตะ")
+    · จุดที่พลาดง่าย: updateProfile ออก token ใหม่ตอนเปลี่ยน username ต้องพก sid เดิมไปด้วย
 16. **Web Push: ตารางใหม่ `push_subscriptions`** — `id` PK · `user_id` FK→`users.id` (RESTRICT) ·
     `endpoint` TEXT UNIQUE · `subscription` TEXT (JSON เต็มของ browser) · `created_at` —
     **ผูก `user_id` ไม่ใช่ username แบบ reference** (ปรัชญาข้อ 7: ข้อความค้าง/ปลอมได้ แต่ id

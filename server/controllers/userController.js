@@ -150,8 +150,14 @@ export const updateProfile = async (req, res) => {
     await tryLogAudit(req.user?.id, 'user.profile_update', 'user', updated.id);
 
     // 4. ออก Token ใหม่เฉพาะตอนที่ Username เปลี่ยน (เพราะ payload เปลี่ยน)
+    //    ต้องพก sid ของ session ปัจจุบันไปด้วย (ข้อ 6.15) — ไม่งั้น token ใหม่ sid หาย
+    //    โดนด่าน session ตัดออกทันทีที่คำขอถัดไป กลายเป็น "เปลี่ยนชื่อแล้วหลุดเอง"
     const newToken = updates.username
-      ? jwt.sign({ id: updated.id, username: updated.username, role: updated.role }, config.jwtSecret, { expiresIn: '1d' })
+      ? jwt.sign(
+          { id: updated.id, username: updated.username, role: updated.role, sid: updated.session_id },
+          config.jwtSecret,
+          { expiresIn: '1d' }
+        )
       : null;
 
     res.json({

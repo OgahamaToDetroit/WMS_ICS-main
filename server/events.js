@@ -10,7 +10,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from './config.js';
 import { getUserById } from './data/userManager.js';
-import { canLogin } from './utils/authRules.js';
+import { canLogin, checkSession } from './utils/authRules.js';
 import { formatEventMessage } from './utils/sseRules.js';
 
 const clients = new Set();
@@ -36,6 +36,18 @@ router.get('/events', async (req, res) => {
     const user = await getUserById(decoded.id);
     if (!canLogin(user)) {
       return res.status(403).json({ success: false, message: 'บัญชีนี้ไม่พร้อมใช้งาน' });
+    }
+    // 1 บัญชี = 1 อุปกรณ์ (ข้อ 6.15) — ด่านเดียวกับ verifyAuth: เครื่องเก่าห้ามต่อ stream ค้างไว้
+    const session = checkSession(decoded.sid, user.session_id);
+    if (session === 'MISSING_SID') {
+      return res.status(403).json({ success: false, message: 'Token ไม่ถูกต้องหรือหมดอายุแล้ว' });
+    }
+    if (session === 'REPLACED') {
+      return res.status(401).json({
+        success: false,
+        code: 'SESSION_REPLACED',
+        message: 'บัญชีนี้ถูกเข้าสู่ระบบจากอุปกรณ์อื่น กรุณาเข้าสู่ระบบใหม่'
+      });
     }
   } catch (err) {
     console.error('[sse] ตรวจบัญชีตอนเปิด stream ไม่สำเร็จ:', err);
