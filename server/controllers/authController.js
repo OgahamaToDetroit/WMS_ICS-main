@@ -73,9 +73,10 @@ export const register = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Username หรือ Email นี้มีผู้ใช้งานแล้ว' });
   }
 
-  // สมัครเอง → status=Pending รออนุมัติ (DATABASE.md ข้อ 6.5) · role เริ่มที่ Operator เสมอ
+  // สมัครเอง → status=Pending รออนุมัติ (DATABASE.md ข้อ 6.5) · role เริ่ม Viewer สิทธิ์ต่ำสุด (ข้อ 6.13):
+  // ต่อให้ใครหลุดผ่านการอนุมัติมาได้ ก็ยังเบิกของไม่ได้ — Admin ต้องตั้งใจเลื่อนขั้นให้เอง
   const hashedPassword = await bcrypt.hash(password, 10);
-  const newUser = await createUser({ username, email, password_hash: hashedPassword, role: 'Operator', status: 'Pending' });
+  const newUser = await createUser({ username, email, password_hash: hashedPassword, role: 'Viewer', status: 'Pending' });
   await tryLogAudit(newUser.id, 'auth.register', 'user', newUser.id, { status: 'Pending' });
   broadcast('users'); // กระดิ่งฝั่ง Admin เด้งทันที — ยิงก่อนขั้นส่งเมลที่ช้า/ล่มได้ (ข้อมูลเปลี่ยนจริงแล้ว)
 

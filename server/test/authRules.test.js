@@ -10,7 +10,8 @@ import {
   avatarForUser,
   isResetTokenUsable,
   normalizeRole,
-  normalizeStatus
+  normalizeStatus,
+  VALID_ROLES
 } from '../utils/authRules.js';
 
 // ---------------------------------------------------------------------------
@@ -109,9 +110,15 @@ test('isResetTokenUsable: ไม่มีโทเคน (null) → ใช้ไ
 // กติกา: enum จำลอง — ค่านอกชุดต้องถูกดันกลับเป็น default (SQLite ไม่มี enum)
 // ---------------------------------------------------------------------------
 
+test('VALID_ROLES ครบ 4 บทบาท — Viewer เพิ่ม 10 ก.ค. 2026 (DATABASE.md ข้อ 6.13)', () => {
+  assert.deepEqual(VALID_ROLES, ['Admin', 'Manager', 'Operator', 'Viewer']);
+});
+
 test('normalizeRole/Status: ค่านอกชุดกลายเป็น default, ค่าถูกต้องผ่านตามเดิม', () => {
   assert.equal(normalizeRole('Admin'), 'Admin');
-  assert.equal(normalizeRole('SuperUser'), 'Operator');
+  assert.equal(normalizeRole('Viewer'), 'Viewer');
+  // ค่าเดาไม่ออกต้องดันลงสิทธิ์ "ต่ำสุด" (Viewer) — ไม่ใช่ Operator ที่เบิกของได้ (least privilege ข้อ 6.13)
+  assert.equal(normalizeRole('SuperUser'), 'Viewer');
   assert.equal(normalizeStatus('Active'), 'Active');
   assert.equal(normalizeStatus('Banned'), 'Pending');
 });

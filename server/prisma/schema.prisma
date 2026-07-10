@@ -54,7 +54,7 @@ model User {
   username      String   @unique
   email         String   @unique // ใช้ยืนยันตอนสมัคร + ลืมรหัสผ่าน
   password_hash String // ผล bcrypt เท่านั้น (มี salt ฝังในตัว) ห้ามเก็บรหัสจริงเด็ดขาด
-  role          String   @default("Operator") // Admin | Manager | Operator — enum จำลอง โค้ดคุมเอง (Admin/Manager ยืนยัน/ปฏิเสธใบได้)
+  role          String   @default("Operator") // Admin | Manager | Operator | Viewer (ข้อ 6.13) — enum จำลอง โค้ดคุมเอง · สมัครใหม่แอปกำหนด Viewer เองทุกครั้ง (default คอลัมน์คงเดิม — เปลี่ยน = migration ที่ไม่ได้อะไร เพราะแอประบุ role ทุกจุดสร้าง)
   status        String   @default("Pending") // Pending | Active | Denied — วงจรอนุมัติบัญชี (login ได้ต้อง Active และ is_active=true)
   avatarUrl     String? // path รูปโปรไฟล์ — NULL/ว่าง = หน้าเว็บ generate รูปจากชื่อเอง
   is_active     Boolean  @default(true) // ปิดใช้งาน = soft delete ห้ามลบแถวจริง (มีประวัติชี้อยู่)

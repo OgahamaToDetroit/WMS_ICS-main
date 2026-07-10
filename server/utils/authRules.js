@@ -4,10 +4,13 @@
 // ที่มาของแต่ละกติกา: DATABASE.md ข้อ 6 (ข้อ 2, 5, 6, 7) + Newdatabase/docs/data_dictionary.md
 
 // enum จำลอง — SQLite ไม่มี enum จริง โค้ดต้องกันค่านอกชุดเอง (DATABASE.md ข้อ 6.2)
-export const VALID_ROLES = ['Admin', 'Manager', 'Operator'];
+// Viewer เพิ่ม 10 ก.ค. 2026 (ข้อ 6.13): ดูข้อมูลได้ทุกหน้า แต่สร้างใบเบิก/แก้ไขอะไรไม่ได้
+export const VALID_ROLES = ['Admin', 'Manager', 'Operator', 'Viewer'];
 export const VALID_STATUSES = ['Pending', 'Active', 'Denied'];
 
-export const normalizeRole = (role) => (VALID_ROLES.includes(role) ? role : 'Operator');
+// ค่านอกชุดดันกลับสิทธิ์ "ต่ำสุด" (least privilege — ข้อ 6.13): ค่าที่เดาไม่ออก
+// ต้องไม่กลายเป็นสิทธิ์ที่เบิกของได้เงียบๆ (fallback เดิมเป็น Operator ตอนยังไม่มี Viewer)
+export const normalizeRole = (role) => (VALID_ROLES.includes(role) ? role : 'Viewer');
 export const normalizeStatus = (status) => (VALID_STATUSES.includes(status) ? status : 'Pending');
 
 // ---------------------------------------------------------------------------

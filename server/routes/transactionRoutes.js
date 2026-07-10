@@ -11,11 +11,13 @@ import { authorizeRoles, verifyAuth } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-router.post('/transactions/request', verifyAuth, createOutboundRequest);
+// Viewer ดูได้อย่างเดียว (ข้อ 6.13) — สร้าง/ยกเลิกใบเบิกไม่ได้ ด่านหลักอยู่ที่ server ตรงนี้
+// (ยกเลิกมีเงื่อนไข "เจ้าของใบ" ซ้อนอีกชั้นใน controller — การ์ด role ที่ route กันแค่ Viewer)
+router.post('/transactions/request', verifyAuth, authorizeRoles('Admin', 'Manager', 'Operator'), createOutboundRequest);
 router.post('/transactions/inbound', verifyAuth, authorizeRoles('Admin', 'Manager'), createInboundTransaction);
 router.get('/transactions', verifyAuth, getTransactions);
 router.get('/transactions/history', verifyAuth, getHistory);
 router.put('/transactions/:id/resolve', verifyAuth, authorizeRoles('Admin', 'Manager'), resolveTransaction);
-router.put('/transactions/:id/cancel', verifyAuth, cancelTransaction);
+router.put('/transactions/:id/cancel', verifyAuth, authorizeRoles('Admin', 'Manager', 'Operator'), cancelTransaction);
 
 export default router;
