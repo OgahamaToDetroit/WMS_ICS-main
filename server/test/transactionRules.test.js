@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  canMarkPickedUp,
   docTypeToTxType,
   deriveDocStatus,
   deriveItemStatus,
@@ -263,4 +264,43 @@ test('resolveOutcome: หลายบรรทัด บางตัวครบ
 test('resolveOutcome: action/ลิสต์ผิด → error ไม่ระเบิด', () => {
   assert.equal(resolveOutcome({ action: 'FOO', lines: [line()] }).ok, false);
   assert.equal(resolveOutcome({ action: 'APPROVE', lines: [] }).ok, false);
+});
+
+// ---------------------------------------------------------------------------
+// คิวรอส่งมอบ (DATABASE.md ข้อ 6.14) — เงื่อนไขการกด "บันทึกส่งมอบ" ที่ database บังคับเองไม่ได้
+// ---------------------------------------------------------------------------
+test('canMarkPickedUp: ISSUE ที่ CONFIRMED และยังไม่เคยกด → กดได้', () => {
+  assert.deepEqual(canMarkPickedUp({ doc_type: 'ISSUE', status: 'CONFIRMED', picked_up_at: null }), { ok: true });
+});
+
+test('canMarkPickedUp: RECEIVE กดไม่ได้แม้ status=CONFIRMED เหมือนกัน — เช็ค doc_type ด้วยเสมอ', () => {
+  const out = canMarkPickedUp({ doc_type: 'RECEIVE', status: 'CONFIRMED', picked_up_at: null });
+  assert.equal(out.ok, false);
+  assert.equal(out.error, 'รายการนี้ไม่อยู่ในสถานะรอส่งมอบสินค้า');
+});
+
+test('canMarkPickedUp: ใบที่ยัง PENDING หรือถูก CANCELLED ไม่อยู่ในคิวรอส่งมอบ', () => {
+  assert.equal(canMarkPickedUp({ doc_type: 'ISSUE', status: 'PENDING', picked_up_at: null }).ok, false);
+  assert.equal(canMarkPickedUp({ doc_type: 'ISSUE', status: 'CANCELLED', picked_up_at: null }).ok, false);
+});
+
+test('canMarkPickedUp: กดซ้ำไม่ได้ — เวลาส่งมอบคือหลักฐาน เขียนทับได้ = ปลอมได้', () => {
+  const out = canMarkPickedUp({ doc_type: 'ISSUE', status: 'CONFIRMED', picked_up_at: new Date() });
+  assert.equal(out.ok, false);
+  assert.equal(out.error, 'รายการนี้บันทึกการส่งมอบไปแล้ว');
+});
+
+test('mapDocumentToTransaction: ทรง JSON มี pickedUpAt — NULL คงเป็น null, มีค่าส่งผ่านตามจริง', () => {
+  const base = {
+    id: 9,
+    doc_no: 'ISS-6907-0009',
+    doc_type: 'ISSUE',
+    status: 'CONFIRMED',
+    created_at: new Date('2026-07-10T03:00:00Z'),
+    resolved_at: new Date('2026-07-10T04:00:00Z'),
+    requestItems: [{ item_id: '02001', qty_requested: 2, qty_confirmed: 2, item: { name: 'x', image_url: null } }]
+  };
+  assert.equal(mapDocumentToTransaction({ ...base, picked_up_at: null }).pickedUpAt, null);
+  const pickedUp = new Date('2026-07-10T05:00:00Z');
+  assert.equal(mapDocumentToTransaction({ ...base, picked_up_at: pickedUp }).pickedUpAt, pickedUp);
 });

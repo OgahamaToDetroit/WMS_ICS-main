@@ -5,6 +5,7 @@ import {
   createOutboundRequest,
   getHistory,
   getTransactions,
+  markPickedUp,
   resolveTransaction
 } from '../controllers/transactionController.js';
 import { authorizeRoles, verifyAuth } from '../middleware/authMiddleware.js';
@@ -18,6 +19,8 @@ router.post('/transactions/inbound', verifyAuth, authorizeRoles('Admin', 'Manage
 router.get('/transactions', verifyAuth, getTransactions);
 router.get('/transactions/history', verifyAuth, getHistory);
 router.put('/transactions/:id/resolve', verifyAuth, authorizeRoles('Admin', 'Manager'), resolveTransaction);
+// ผู้ขอกดยืนยันรับของเองไม่ได้ — หลักฐานการส่งมอบต้องมาจากคนคลัง (ข้อ 6.14)
+router.put('/transactions/:id/pickup', verifyAuth, authorizeRoles('Admin', 'Manager'), markPickedUp);
 router.put('/transactions/:id/cancel', verifyAuth, authorizeRoles('Admin', 'Manager', 'Operator'), cancelTransaction);
 
 export default router;

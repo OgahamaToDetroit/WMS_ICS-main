@@ -152,8 +152,12 @@
     สิทธิ์กด = Admin/Manager (คนคลัง) — ผู้ขอกดเองไม่ได้ ไม่งั้นหลักฐานการส่งมอบปลอมได้
     · **ไม่แตะสต็อก** — transaction OUT ยังเกิดตอน confirm เหมือนเดิม คอลัมน์นี้เป็นสถานะ
     การส่งมอบล้วนๆ · **Backfill ใน migration เดียวกัน: ใบ ISSUE ที่ CONFIRMED อยู่ก่อนแล้ว
-    ประทับ `picked_up_at = updated_at` ให้เลย** ไม่งั้นใบประวัติศาสตร์ท่วมคิวรอส่งมอบ
-    (บทเรียนเดียวกับที่ reference เจอแล้วแก้แบบเดียวกันใน migration ของเขา)
+    ประทับ `picked_up_at = COALESCE(resolved_at, doc_date)` ให้เลย** ไม่งั้นใบประวัติศาสตร์
+    ท่วมคิวรอส่งมอบ (บทเรียนเดียวกับที่ reference เจอแล้วแก้แบบเดียวกันใน migration ของเขา)
+    — *แก้ข้อความ 10 ก.ค. 2026 ตอนทำ migration จริง (`20260710131952`): ฉบับแรกเขียน
+    `updated_at` ซึ่งตาราง `stock_documents` ไม่มีคอลัมน์นี้ (มีแต่ `resolved_at`/`created_at`)*
+    · **ทำจริงแล้ว (เฟส 2):** endpoint `PUT /api/transactions/:id/pickup` · เงื่อนไขกดอยู่
+    `transactionRules.canMarkPickedUp` (แยกเทสต์ได้) · ทรง JSON เพิ่ม field `pickedUpAt`
 15. **1 บัญชี = 1 อุปกรณ์: คอลัมน์ใหม่ `users.session_id` (TEXT, NULL ได้)** — ทุกครั้งที่ login
     ออกเลข session ใหม่ ฝังลง token (claim `sid`) + เขียนทับคอลัมน์นี้ → token ที่ `sid` ไม่ตรง
     ค่าล่าสุดถือว่าตายทันที (อุปกรณ์ล่าสุดที่ login ชนะ เครื่องเก่าหลุด) · เหตุผล: กันการแชร์บัญชี

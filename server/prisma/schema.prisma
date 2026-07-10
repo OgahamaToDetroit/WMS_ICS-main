@@ -112,6 +112,7 @@ model StockDocument {
   requested_by Int? // ใครขอเบิก (FK→users) — ISSUE บังคับมี, RECEIVE ว่างเสมอ (แอปคุม)
   resolved_by  Int? // ใครปิดใบ (FK→users) — Admin/Manager ยืนยัน/ปฏิเสธได้ทุกใบ · ผู้ขอยกเลิกใบตัวเองได้เฉพาะตอน PENDING (กติกาฉบับแก้ DATABASE.md ข้อ 6)
   resolved_at  DateTime? // เวลาปิดคำขอ (ยืนยันหรือยกเลิกก็นับ)
+  picked_up_at DateTime? // เวลาส่งมอบของให้ผู้ขอจริง (ข้อ 6.14): "อนุมัติแล้ว" ≠ "ของออกจากคลังแล้ว" — ใช้กับ ISSUE ที่ CONFIRMED เท่านั้น (RECEIVE/CANCELLED = NULL เสมอ) · NULL = ยังไม่มารับ · ไม่เกี่ยวกับยอดสต็อก (แถว OUT เกิดตอน confirm ไปแล้ว)
   created_by   Int? // ใครสร้างใบ — NULL จนกว่าแอปจะมีระบบ login
   created_at   DateTime  @default(now())
 

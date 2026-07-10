@@ -122,9 +122,26 @@ export const mapDocumentToTransaction = (doc) => {
     project: doc.project ?? null,
     requestDate: doc.created_at, // เวลาสร้างใบ (Prisma DateTime → ISO ตอน serialize) ใช้เรียง/ตัดวัน
     resolvedDate: doc.resolved_at ?? null,
+    pickedUpAt: doc.picked_up_at ?? null, // NULL = ใบอนุมัติแล้วที่ยังค้างคิวรอส่งมอบ (ข้อ 6.14) — ชื่อ field ตามทรง JSON ของ reference
     adminMessage: doc.note ?? null, // note ระดับใบ = เหตุผลปฏิเสธ/ยกเลิก (ตรงกับ adminMessage เดิม)
     items
   };
+};
+
+// ---------------------------------------------------------------------------
+// คิวรอส่งมอบ (DATABASE.md ข้อ 6.14): "อนุมัติแล้ว" ≠ "ของออกจากคลังแล้ว"
+// บันทึกส่งมอบได้เฉพาะใบ ISSUE ที่ CONFIRMED และยังไม่เคยบันทึก — กดซ้ำ = error ไม่ใช่เขียนทับ
+// (เวลาส่งมอบคือหลักฐาน เขียนทับได้เมื่อไหร่ก็ปลอมได้เมื่อนั้น) · สิทธิ์กดคุมที่ route (Admin/Manager)
+// หมายเหตุ: RECEIVE ก็ status=CONFIRMED เหมือนกัน — เช็ค doc_type ด้วยเสมอ ไม่งั้นใบรับเข้าหลุดเข้าคิว
+// ---------------------------------------------------------------------------
+export const canMarkPickedUp = (doc) => {
+  if (doc.doc_type !== 'ISSUE' || doc.status !== 'CONFIRMED') {
+    return { ok: false, error: 'รายการนี้ไม่อยู่ในสถานะรอส่งมอบสินค้า' };
+  }
+  if (doc.picked_up_at != null) {
+    return { ok: false, error: 'รายการนี้บันทึกการส่งมอบไปแล้ว' };
+  }
+  return { ok: true };
 };
 
 // ---------------------------------------------------------------------------

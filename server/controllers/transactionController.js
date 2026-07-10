@@ -9,7 +9,7 @@
 import { prisma } from '../prisma.js';
 import { tryLogAudit } from '../utils/audit.js';
 import { broadcast } from '../events.js';
-import { DOCUMENT_INCLUDE, mapDocumentToTransaction, resolveOutcome } from '../utils/transactionRules.js';
+import { DOCUMENT_INCLUDE, canMarkPickedUp, mapDocumentToTransaction, resolveOutcome } from '../utils/transactionRules.js';
 import { buildDocNoPrefix, buildNextDocNo, parseMinStock } from '../utils/productRules.js';
 
 const CODE_RETRY_LIMIT = 3; // ชน doc_no ซ้ำ (P2002) แล้ววนออกเลขใหม่ ไม่ล้มทั้งคำขอ
@@ -333,6 +333,42 @@ export const resolveTransaction = async (req, res) => {
     broadcast('transactions');
     broadcast('products'); // ยืนยันแล้วถึงมีแถว OUT — ยอดคงเหลือเพิ่งเปลี่ยน ณ ตอนนี้
     res.json({ success: true, message: 'พิจารณาใบเบิกเสร็จสิ้น' });
+  } catch (err) {
+    handleError(res, err);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// บันทึกการส่งมอบ (คิวรอส่งมอบ — DATABASE.md ข้อ 6.14): Admin/Manager กดตอนผู้ขอมารับของจริง
+// ใบ ISSUE ที่ CONFIRMED แต่ picked_up_at ยัง NULL = ค้างอยู่ในคิว · ไม่แตะยอดสต็อก
+// (แถว OUT เกิดตอน confirm ไปแล้ว) — คอลัมน์นี้เป็นหลักฐานการส่งมอบล้วนๆ
+// ---------------------------------------------------------------------------
+export const markPickedUp = async (req, res) => {
+  try {
+    const docId = Number(req.params.id);
+    if (!Number.isInteger(docId)) return res.status(404).json({ success: false, message: 'ไม่พบรายการ' });
+    const actorId = req.user?.id ?? null;
+
+    const doc = await prisma.stockDocument.findUnique({
+      where: { id: docId },
+      select: { id: true, doc_no: true, doc_type: true, status: true, picked_up_at: true }
+    });
+    if (!doc) return res.status(404).json({ success: false, message: 'ไม่พบรายการ' });
+
+    const eligibility = canMarkPickedUp(doc);
+    if (!eligibility.ok) throw new ValidationError(eligibility.error);
+
+    // เขียนแบบมีเงื่อนไข picked_up_at IS NULL — สองเครื่องกดพร้อมกัน คนช้าได้ 0 แถว
+    // (เช็คก่อนเขียนอย่างเดียวมีช่องว่างระหว่างอ่านกับเขียน ให้เวลาส่งมอบถูกทับเงียบๆ ได้)
+    const updated = await prisma.stockDocument.updateMany({
+      where: { id: doc.id, picked_up_at: null },
+      data: { picked_up_at: new Date() }
+    });
+    if (updated.count === 0) throw new ValidationError('รายการนี้บันทึกการส่งมอบไปแล้ว');
+
+    await tryLogAudit(actorId, 'transaction.picked_up', 'document', doc.id, { docNo: doc.doc_no });
+    broadcast('transactions');
+    res.json({ success: true, message: 'บันทึกการส่งมอบสินค้าเรียบร้อย' });
   } catch (err) {
     handleError(res, err);
   }
