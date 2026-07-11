@@ -18,11 +18,11 @@ export const DOCUMENT_INCLUDE = {
   resolver: { select: { username: true } },
   creator: { select: { username: true } },
   requestItems: {
-    include: { item: { select: { name: true, image_url: true } } },
+    include: { item: { select: { name: true, image_url: true, group_id: true, group: { select: { group_name: true } } } } },
     orderBy: { id: 'asc' }
   },
   transactions: {
-    include: { item: { select: { name: true, image_url: true } } },
+    include: { item: { select: { name: true, image_url: true, group_id: true, group: { select: { group_name: true } } } } },
     orderBy: { id: 'asc' }
   }
 };
@@ -77,6 +77,8 @@ export const mapRequestItem = (ri, docStatus) => ({
   sku: ri.item_id,
   productName: ri.item?.name ?? '',
   imageUrl: ri.item?.image_url || '',
+  groupId: ri.item?.group_id ?? '', // Homepage ใช้ตอน export PDF (คอลัมน์หมวดหมู่)
+  groupName: ri.item?.group?.group_name ?? '',
   requestedQty: ri.qty_requested,
   approvedQty: ri.qty_confirmed ?? 0, // ยัง PENDING = ยังไม่ให้ = 0 (หน้าเว็บ default ช่องอนุมัติจาก requestedQty เอง)
   status: deriveItemStatus(ri.qty_requested, ri.qty_confirmed, docStatus)
@@ -89,6 +91,8 @@ export const mapReceiveItem = (tx) => ({
   sku: tx.item_id,
   productName: tx.item?.name ?? '',
   imageUrl: tx.item?.image_url || '',
+  groupId: tx.item?.group_id ?? '',
+  groupName: tx.item?.group?.group_name ?? '',
   requestedQty: tx.qty_change,
   approvedQty: tx.qty_change,
   status: 'Approved'
