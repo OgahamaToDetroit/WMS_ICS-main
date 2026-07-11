@@ -8,6 +8,7 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
+    host: true, // เปิดรับจากเครื่องอื่นในวง LAN (มือถือดู layout ได้ — กล้อง/SW/push ต้อง secure context)
     proxy: {
       '/api': {
         target: 'http://localhost:5000', // backend รันที่พอร์ต 5000
