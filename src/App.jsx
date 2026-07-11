@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { fetchApi } from './utils/api';
+import { subscribeIfGranted } from './utils/push';
 
 import Navbar from './components/Navbar';
 import Homepage from './components/Homepage';
@@ -12,6 +13,9 @@ import ResetPasswordPage from './components/ResetPassword';
 import Inventory from './components/Inventory';
 import Products from './components/Products';
 import UserManagement from './components/UserManagement';
+// InstallPrompt (ชวนติดตั้ง PWA) เป็นของเฟส 3C — ใส่กลับพร้อมชุด public/ + SW
+import WelcomeTips from './components/WelcomeTips';
+import { ConfirmHost } from './utils/confirm';
 import { AuthContext } from './AuthContext';
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -40,6 +44,7 @@ export default function App() {
             sessionStorage.setItem('currentUser', JSON.stringify(data.user));
           }
           setIsAuthenticated(true);
+          subscribeIfGranted(); // สมัคร push ถ้าเคยอนุญาตไว้แล้ว (ไม่เด้งขอสิทธิ์)
         } catch {
           setIsAuthenticated(false);
         }
@@ -53,7 +58,7 @@ export default function App() {
 
   if (isVerifying) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-base-200 gap-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-transparent gap-4">
         <span className="loading loading-spinner loading-lg text-primary"></span>
         <p className="font-semibold text-base-content/70">กำลังตรวจสอบระบบ...</p>
       </div>
@@ -64,7 +69,10 @@ export default function App() {
     <AuthContext.Provider value={{ isAuthenticated, setIsAuthenticated }}>
       {/* เลื่อน toast ลงมาให้พ้น navbar (สูง ~64px) จะได้ไม่บังเมนู/กระดิ่งแจ้งเตือน */}
       <Toaster position="top-right" reverseOrder={false} containerStyle={{ top: 76 }} toastOptions={{ className: 'text-sm font-medium rounded-xl shadow-lg' }} />
-      <div className="min-h-screen flex flex-col bg-base-200/30 transition-colors duration-300">
+      <ConfirmHost />
+      {isAuthenticated && <WelcomeTips />}
+      {/* พื้นหลังจริงเป็น gradient ที่ body (index.css) — wrapper ต้องโปร่งใสให้เห็น */}
+      <div className="min-h-screen flex flex-col bg-transparent transition-colors duration-300">
         <Navbar />
         <div className="relative flex-1">
           <main className="h-full p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">

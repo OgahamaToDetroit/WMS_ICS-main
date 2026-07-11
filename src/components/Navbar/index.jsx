@@ -4,6 +4,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AuthContext } from '../../AuthContext';
 import { fetchApi } from '../../utils/api';
+import { onServerEvent, resetEventStream } from '../../utils/events';
 
 // เสียง "ติ๊งต่อง" สั้นๆ สร้างด้วย Web Audio API เพื่อไม่ต้องพึ่งไฟล์เสียง
 let audioCtx = null;
@@ -82,8 +83,14 @@ export default function Navbar() {
     if (!isAuthenticated) return;
     try {
       let newNotifs = [];
-      const dataTx = await fetchApi('/api/transactions');
-      
+      // Admin/Manager สนใจเฉพาะใบที่ค้างอยู่ ส่วนคนอื่นดูผลใบเบิกของตัวเองย้อนหลัง 7 วันพอ
+      // จะได้ไม่ต้องดึงประวัติทั้งหมดมาทุกรอบ poll
+      const isManagerial = ['Admin', 'Manager'].includes(currentUser.role);
+      const txQuery = isManagerial
+        ? '?view=active'
+        : `?since=${encodeURIComponent(new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString())}`;
+      const dataTx = await fetchApi(`/api/transactions${txQuery}`);
+
       if (dataTx.success) {
         if (currentUser.role === 'Admin' || currentUser.role === 'Manager') {
           const pendingTx = dataTx.transactions.filter(t => t.status === 'Pending');
@@ -93,9 +100,16 @@ export default function Navbar() {
           newNotifs = [...newNotifs, ...txNotifs];
         } else {
           const resolvedTx = dataTx.transactions.filter(t => t.requesterUsername === currentUser.username && t.status !== 'Pending');
-          const resNotifs = resolvedTx.map(t => ({
-            id: `tx-res-${t.id}`, text: `✉️ ผลขอเบิก ${t.transactionId || 'ของคุณ'}: ${t.status === 'Approved' ? '✅ อนุมัติ' : t.status === 'Partial' ? '⚠️ อนุมัติบางส่วน' : '❌ ปฏิเสธ'}`, isRead: false, type: t.status === 'Approved' ? 'info' : 'error', link: '/homepage'
-          }));
+          const resNotifs = resolvedTx.map(t => {
+            const statusText = t.status === 'Approved' ? '✅ อนุมัติ' : t.status === 'Partial' ? '⚠️ อนุมัติบางส่วน' : '❌ ปฏิเสธ';
+            // อนุมัติแล้วแต่ยังไม่กด Picked up = ของพร้อมแล้ว รอผู้ขอมารับ
+            const pickupHint = ['Approved', 'Partial'].includes(t.status) && !t.pickedUpAt ? ' — มารับสินค้าได้เลย' : '';
+            // แนบหมายเหตุจาก admin ไปด้วย เผื่อมีเงื่อนไข เช่น นัดเวลารับของ หรือเหตุผลที่จ่ายไม่ครบ
+            const adminNote = t.adminMessage ? ` (หมายเหตุ: ${t.adminMessage})` : '';
+            return {
+              id: `tx-res-${t.id}`, text: `✉️ ผลขอเบิก ${t.transactionId || 'ของคุณ'}: ${statusText}${pickupHint}${adminNote}`, isRead: false, type: t.status === 'Approved' ? 'info' : 'error', link: '/homepage'
+            };
+          });
           newNotifs = [...newNotifs, ...resNotifs];
         }
       }
@@ -143,15 +157,19 @@ export default function Navbar() {
     }
   }, [isAuthenticated, currentUser.role, currentUser.username, saveNotifState]);
 
-  // โหลดแจ้งเตือนทันที แล้ว poll ซ้ำทุก 30 วินาที + refresh ตอนผู้ใช้สลับกลับมาที่แท็บ
+  // โหลดแจ้งเตือนทันที + รับสัญญาณ SSE แบบ real-time โดยคง polling 30 วิไว้เป็น fallback
   useEffect(() => {
     fetchNotificationsData();
     const interval = setInterval(fetchNotificationsData, 30000);
     const onFocus = () => fetchNotificationsData();
     window.addEventListener('focus', onFocus);
+    const offTx = onServerEvent('transactions', fetchNotificationsData);
+    const offUsers = onServerEvent('users', fetchNotificationsData);
     return () => {
       clearInterval(interval);
       window.removeEventListener('focus', onFocus);
+      offTx();
+      offUsers();
     };
   }, [fetchNotificationsData]);
 
@@ -186,6 +204,7 @@ export default function Navbar() {
   const handleLogout = () => {
     sessionStorage.removeItem('token');
     sessionStorage.removeItem('currentUser');
+    resetEventStream(); // ปิด SSE connection ของ session เดิม
     setIsAuthenticated(false);
     navigate('/login');
   };
@@ -193,31 +212,31 @@ export default function Navbar() {
   if (location.pathname === '/login' || !isAuthenticated) return null;
 
   return (
-    <div className="navbar sticky top-0 z-[40] bg-base-100/70 backdrop-blur-md border-b border-base-200 px-2 md:px-4 shadow-sm">
+    <div className="navbar sticky top-0 z-40 glass-panel border-x-0 border-t-0 rounded-none px-2 md:px-4">
       <div className="navbar-start w-auto">
         <div className="dropdown">
           <label tabIndex={0} className="btn btn-ghost btn-circle">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h7" /></svg>
           </label>
-          <ul tabIndex={0} className="menu menu-md dropdown-content bg-base-100/95 backdrop-blur-xl rounded-box z-[50] mt-3 w-64 p-2 shadow-2xl border border-base-200 gap-1">
-            <li className="menu-title text-base-content/50 text-xs">WMS Modules</li>
-            <li><Link to="/homepage">📊 Dashboard & คำขอเบิก</Link></li>
-            <li><Link to="/inventory">📦 สินค้าคงคลัง (Inventory)</Link></li>
+          <ul tabIndex={0} className="menu menu-md dropdown-content glass-modal rounded-box z-50 mt-3 w-64 p-2 gap-1">
+            <li className="menu-title text-base-content/50 text-xs">เมนูระบบคลังสินค้า</li>
+            <li><Link to="/homepage">📊 แดชบอร์ด & คำขอเบิก</Link></li>
+            <li><Link to="/inventory">📦 สินค้าคงคลัง</Link></li>
             {['Admin', 'Manager'].includes(currentUser.role) && (
-              <li><Link to="/products">🏷️ รายการสินค้า (Products)</Link></li>
+              <li><Link to="/products">🏷️ รายการอะไหล่</Link></li>
             )}
             {currentUser.role === 'Admin' && (
-              <li><Link to="/users">👥 จัดการผู้ใช้งาน (Users)</Link></li>
+              <li><Link to="/users">👥 จัดการผู้ใช้งาน</Link></li>
             )}
           </ul>
         </div>
-        <Link to="/homepage" className="text-xl font-black tracking-widest text-primary hidden md:flex ml-2">WMS<span className="text-base-content">iCreativeSystem</span></Link>
+        <Link to="/homepage" className="text-xl font-black tracking-widest hidden md:flex ml-2"><span className="text-gradient">WMS</span><span className="text-base-content">iCreativeSystems</span></Link>
       </div>
 
       <div className="navbar-center hidden lg:flex flex-1"></div>
 
       <div className="navbar-end flex flex-1 justify-end gap-2 md:gap-4">
-        <div className="form-control relative hidden sm:block w-full max-w-[200px] md:max-w-xs">
+        <div className="form-control relative hidden sm:block w-full max-w-50 md:max-w-xs">
           <input type="text" placeholder="🔍 ค้นหา (กด Enter)..." className="input input-bordered input-sm w-full bg-base-200/50 backdrop-blur-sm pr-10 focus:ring-1 focus:ring-primary" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={handleSearch} />
         </div>
 
@@ -228,7 +247,7 @@ export default function Navbar() {
               {unreadCount > 0 && <span className="badge badge-xs badge-error indicator-item animate-pulse text-[10px] text-white">{unreadCount}</span>}
             </div>
           </label>
-          <ul tabIndex={0} className="mt-3 p-2 shadow-2xl menu menu-sm dropdown-content bg-base-100/95 backdrop-blur-xl rounded-box w-[320px] border border-base-200 z-[50]">
+          <ul tabIndex={0} className="menu menu-sm dropdown-content glass-modal rounded-box w-80 max-w-[calc(100vw-1rem)] z-50 fixed! top-17 right-1 left-auto p-2">
             <li className="menu-title flex justify-between items-center border-b border-base-200 pb-2 mb-2">
               <span className="text-base-content font-bold">แจ้งเตือนใหม่</span>
               {notifications.length > 0 && (
@@ -267,10 +286,10 @@ export default function Navbar() {
           <label tabIndex={0} className="btn btn-ghost btn-circle avatar ml-1">
             <div className="w-9 rounded-full overflow-hidden border border-base-300 ring-2 ring-primary/20"><img src={avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=0D8ABC&color=fff`} alt="User" /></div>
           </label>
-          <ul tabIndex={0} className="mt-3 p-2 shadow-xl menu menu-sm dropdown-content bg-base-100/95 backdrop-blur-xl rounded-box w-52 border border-base-200 z-[50]">
-            <li className="font-semibold px-4 py-2 text-base-content/70 border-b border-base-200 mb-1">Hello, {username}</li>
-            <li><button onClick={() => navigate('/settings')}>⚙️ Settings</button></li>
-            <li><button onClick={handleLogout} className="text-error">🚪 Logout</button></li>
+          <ul tabIndex={0} className="mt-3 p-2 menu menu-sm dropdown-content glass-modal rounded-box w-52 z-50">
+            <li className="font-semibold px-4 py-2 text-base-content/70 border-b border-base-200 mb-1">สวัสดี, {username}</li>
+            <li><button onClick={() => navigate('/settings')}>⚙️ ตั้งค่าบัญชี</button></li>
+            <li><button onClick={handleLogout} className="text-error">🚪 ออกจากระบบ</button></li>
           </ul>
         </div>
       </div>

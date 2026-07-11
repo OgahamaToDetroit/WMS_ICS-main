@@ -37,16 +37,16 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="w-full min-h-[86vh] flex justify-center items-center bg-base-200/30 p-4">
-      <div className="card w-full max-w-md bg-base-100 shadow-2xl p-8 border border-base-300 text-center">
-        <h2 className="text-2xl font-bold mb-6 text-base-content">Reset Password</h2>
+    <div className="w-full min-h-[86vh] flex justify-center items-center p-4">
+      <div className="card w-full max-w-md glass-panel p-8 text-center">
+        <h2 className="text-2xl font-bold mb-6 text-base-content">ตั้งรหัสผ่านใหม่</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="form-control relative">
             <FaLock className="absolute left-4 top-1/2 -translate-y-1/2 text-base-content/40 z-10" />
             <input
               className="input input-bordered pl-12 rounded-full w-full bg-base-100 text-sm focus:outline-none"
               type="password"
-              placeholder="New Password"
+              placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)"
               value={pwd}
               onChange={(e) => setPwd(e.target.value)}
               required
@@ -58,7 +58,7 @@ export default function ResetPasswordPage() {
             <input
               className="input input-bordered pl-12 rounded-full w-full bg-base-100 text-sm focus:outline-none"
               type="password"
-              placeholder="Confirm Password"
+              placeholder="ยืนยันรหัสผ่านใหม่"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               required
@@ -71,7 +71,7 @@ export default function ResetPasswordPage() {
             disabled={loading}
           >
             {loading && <span className="loading loading-spinner loading-xs"></span>}
-            Reset Password
+            บันทึกรหัสผ่านใหม่
           </button>
         </form>
         <p className="mt-6 text-sm text-center">
@@ -79,7 +79,7 @@ export default function ResetPasswordPage() {
             onClick={() => navigate('/login')}
             className="link link-primary font-semibold cursor-pointer"
           >
-            Back to Login
+            กลับไปเข้าสู่ระบบ
           </span>
         </p>
       </div>

@@ -5,6 +5,7 @@ import { FaUserAlt, FaLock, FaEnvelope, FaLockOpen } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { AuthContext } from '../../AuthContext';
 import { fetchApi } from '../../utils/api'; // 🔥 นำเข้า fetchApi มาใช้งาน
+import { subscribeIfGranted } from '../../utils/push';
 
 export default function LoginPage() {
   const { setIsAuthenticated } = useContext(AuthContext);
@@ -51,7 +52,7 @@ export default function LoginPage() {
         }
 
         sessionStorage.setItem('token', data.token);
-        sessionStorage.setItem('currentUser', JSON.stringify({ 
+        sessionStorage.setItem('currentUser', JSON.stringify({
           id: data.id,
           username: data.username, 
           email: data.email,
@@ -59,6 +60,7 @@ export default function LoginPage() {
           role: data.role 
         }));
         setIsAuthenticated(true);
+        subscribeIfGranted(); // สมัคร push ถ้าเคยอนุญาต — การขอสิทธิ์ครั้งแรกทำผ่านปุ่มในหน้าตั้งค่า
         navigate('/homepage');
       }
     } catch (err) {
@@ -111,18 +113,18 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="w-full min-h-[86vh] flex justify-center items-center bg-base-200/30 p-4">
-      <div className="card w-full max-w-md bg-base-100 shadow-2xl p-8 border border-base-300">
+    <div className="w-full min-h-[86vh] flex justify-center items-center p-4">
+      <div className="card w-full max-w-md glass-panel p-8">
         {mode === 'login' && (
           <>
-            <h2 className="text-2xl font-bold mb-6 text-base-content text-center">WMS Login</h2>
+            <h2 className="text-2xl font-bold mb-6 text-base-content text-center">เข้าสู่ระบบ WMS</h2>
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="form-control relative">
                 <FaUserAlt className="absolute left-4 top-1/2 -translate-y-1/2 text-base-content/40 z-10" />
                 <input
                   className="input input-bordered pl-12 rounded-full w-full bg-base-100 text-sm focus:outline-none"
                   type="text"
-                  placeholder="Username"
+                  placeholder="ชื่อผู้ใช้"
                   value={username}
                   onChange={e => setUsername(e.target.value)}
                   required
@@ -133,7 +135,7 @@ export default function LoginPage() {
                 <input
                   className="input input-bordered pl-12 rounded-full w-full bg-base-100 text-sm focus:outline-none"
                   type="password"
-                  placeholder="Password"
+                  placeholder="รหัสผ่าน"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   required
@@ -147,26 +149,26 @@ export default function LoginPage() {
                     checked={remember}
                     onChange={() => setRemember(r => !r)}
                   />
-                  <span className="label-text">Remember me</span>
+                  <span className="label-text">จดจำชื่อผู้ใช้</span>
                 </label>
                 <span
                   onClick={() => setMode('forgot')}
                   className="link link-hover text-primary font-medium cursor-pointer"
                 >
-                  Forgot password?
+                  ลืมรหัสผ่าน?
                 </span>
               </div>
               <button type="submit" className="btn btn-primary rounded-full w-full text-white font-semibold mt-4">
-                Login
+                เข้าสู่ระบบ
               </button>
             </form>
             <p className="mt-6 text-sm text-center text-base-content/70">
-              Don't have an account?{' '}
+              ยังไม่มีบัญชีผู้ใช้?{' '}
               <span
                 onClick={() => setMode('register')}
                 className="link link-primary font-semibold cursor-pointer ml-1"
               >
-                Create Account
+                สมัครสมาชิก
               </span>
             </p>
           </>
@@ -174,14 +176,14 @@ export default function LoginPage() {
 
         {mode === 'register' && (
           <>
-            <h2 className="text-2xl font-bold mb-6 text-base-content text-center">Register Account</h2>
+            <h2 className="text-2xl font-bold mb-6 text-base-content text-center">สมัครสมาชิก</h2>
             <form onSubmit={handleRegister} className="space-y-4">
               <div className="form-control relative">
                 <FaUserAlt className="absolute left-4 top-1/2 -translate-y-1/2 text-base-content/40 z-10" />
                 <input
                   className="input input-bordered pl-12 rounded-full w-full bg-base-100 text-sm focus:outline-none"
                   type="text"
-                  placeholder="Username"
+                  placeholder="ชื่อผู้ใช้"
                   value={regUsername}
                   onChange={e => setRegUsername(e.target.value)}
                   required
@@ -192,7 +194,7 @@ export default function LoginPage() {
                 <input
                   className="input input-bordered pl-12 rounded-full w-full bg-base-100 text-sm focus:outline-none"
                   type="email"
-                  placeholder="Email"
+                  placeholder="อีเมล"
                   value={regEmail}
                   onChange={e => setRegEmail(e.target.value)}
                   required
@@ -203,7 +205,7 @@ export default function LoginPage() {
                 <input
                   className="input input-bordered pl-12 rounded-full w-full bg-base-100 text-sm focus:outline-none"
                   type="password"
-                  placeholder="Password"
+                  placeholder="รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)"
                   value={regPassword}
                   onChange={e => setRegPassword(e.target.value)}
                   required
@@ -214,23 +216,23 @@ export default function LoginPage() {
                 <input
                   className="input input-bordered pl-12 rounded-full w-full bg-base-100 text-sm focus:outline-none"
                   type="password"
-                  placeholder="Confirm Password"
+                  placeholder="ยืนยันรหัสผ่าน"
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
                   required
                 />
               </div>
               <button type="submit" className="btn btn-primary rounded-full w-full text-white font-semibold mt-4">
-                Register
+                สมัครสมาชิก
               </button>
             </form>
             <p className="mt-6 text-sm text-center text-base-content/70">
-              Already have an account?{' '}
+              มีบัญชีอยู่แล้ว?{' '}
               <span
                 onClick={() => setMode('login')}
                 className="link link-primary font-semibold cursor-pointer ml-1"
               >
-                Login
+                เข้าสู่ระบบ
               </span>
             </p>
           </>
@@ -238,30 +240,30 @@ export default function LoginPage() {
 
         {mode === 'forgot' && (
           <>
-            <h2 className="text-2xl font-bold mb-6 text-base-content text-center">Forgot Password</h2>
+            <h2 className="text-2xl font-bold mb-6 text-base-content text-center">ลืมรหัสผ่าน</h2>
             <form onSubmit={handleForgot} className="space-y-4">
               <div className="form-control relative">
                 <FaEnvelope className="absolute left-4 top-1/2 -translate-y-1/2 text-base-content/40 z-10" />
                 <input
                   className="input input-bordered pl-12 rounded-full w-full bg-base-100 text-sm focus:outline-none"
                   type="email"
-                  placeholder="Your Email"
+                  placeholder="อีเมลที่ใช้สมัคร"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   required
                 />
               </div>
               <button type="submit" className="btn btn-primary rounded-full w-full text-white font-semibold mt-4">
-                Send Reset Link
+                ส่งลิงก์รีเซ็ตรหัสผ่าน
               </button>
             </form>
             <p className="mt-6 text-sm text-center text-base-content/70">
-              Remembered?{' '}
+              นึกรหัสผ่านออกแล้ว?{' '}
               <span
                 onClick={() => setMode('login')}
                 className="link link-primary font-semibold cursor-pointer ml-1"
               >
-                Back to Login
+                กลับไปเข้าสู่ระบบ
               </span>
             </p>
           </>
