@@ -31,6 +31,7 @@ const trimmedId = (value) => String(value || '').trim();
 export const getProducts = async (req, res) => {
   try {
     const search = String(req.query.search || '').trim();
+    const group = String(req.query.group || '').trim();
     const page = Math.max(Number.parseInt(req.query.page || '1', 10), 1);
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit || '50', 10), 1), 500);
     const includeInactive = req.query.includeInactive === 'true';
@@ -39,6 +40,7 @@ export const getProducts = async (req, res) => {
     // — พฤติกรรมเดียวกับที่โค้ดเดิมทำด้วย LOWER() สองฝั่ง
     const where = {
       ...(includeInactive ? {} : { is_active: true }),
+      ...(group ? { group_id: group } : {}), // group_id เป็น text ห้าม cast เลข (เลขศูนย์นำหน้ามีความหมาย)
       ...(search
         ? {
             OR: [

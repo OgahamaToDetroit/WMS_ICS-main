@@ -21,6 +21,7 @@ export const mapItemToProduct = (item, stock) => ({
   sku: item.item_id,
   name: item.name,
   unit: item.unit || '',
+  groupId: item.group_id, // text ห้าม cast เลข (เลขศูนย์นำหน้ามีความหมาย) — หน้า Products/Inventory ใหม่ใช้กรอง/แสดง
   groupName: item.group?.group_name || '',
   vendor: item.vendor || '',
   latestCost: item.latest_cost ?? null,
@@ -28,7 +29,8 @@ export const mapItemToProduct = (item, stock) => ({
   stock,
   imageUrl: item.image_url || '',
   warning: stock < 0 ? 'Negative stock' : null,
-  status: computeStatus(stock, item.min_stock)
+  status: computeStatus(stock, item.min_stock),
+  isActive: item.is_active // หน้า Products ใหม่ใช้แยกมุมมอง "ที่ปิดใช้งาน" (เดิมไม่มี field นี้ → !undefined===true โชว์ทุกตัวผิด)
 });
 
 // ผล groupBy ของ Prisma → Map(item_id → ยอดรวม) — สินค้าที่ไม่มีแถว transaction เลย
