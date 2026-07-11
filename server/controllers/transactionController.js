@@ -11,7 +11,14 @@ import { tryLogAudit } from '../utils/audit.js';
 import { broadcast } from '../events.js';
 import { sendPushToUser } from '../push.js';
 import { buildResolvePush } from '../utils/pushRules.js';
-import { DOCUMENT_INCLUDE, canMarkPickedUp, mapDocumentToTransaction, resolveOutcome, buildTransactionWhere } from '../utils/transactionRules.js';
+import {
+  DOCUMENT_INCLUDE,
+  aggregateOutboundItems,
+  canMarkPickedUp,
+  mapDocumentToTransaction,
+  resolveOutcome,
+  buildTransactionWhere
+} from '../utils/transactionRules.js';
 import { buildDocNoPrefix, buildNextDocNo, parseMinStock } from '../utils/productRules.js';
 
 const CODE_RETRY_LIMIT = 3; // ชน doc_no ซ้ำ (P2002) แล้ววนออกเลขใหม่ ไม่ล้มทั้งคำขอ
@@ -95,7 +102,8 @@ export const getHistory = async (req, res) => {
 export const createOutboundRequest = async (req, res) => {
   try {
     const { items, project } = req.body;
-    if (!Array.isArray(items) || items.length === 0) throw new ValidationError('ไม่มีรายการสินค้า');
+    const preparedItems = aggregateOutboundItems(items);
+    if (!preparedItems.ok) throw new ValidationError(preparedItems.error);
     const trimmedProject = String(project || '').trim();
     if (!trimmedProject) throw new ValidationError('กรุณาระบุโปรเจกต์');
 
@@ -106,13 +114,10 @@ export const createOutboundRequest = async (req, res) => {
     for (let attempt = 1; attempt <= CODE_RETRY_LIMIT && !created; attempt += 1) {
       try {
         created = await prisma.$transaction(async (tx) => {
-          // ตรวจทุกบรรทัด: มีจริง + ยังใช้งาน + สต็อกพอ (เช็คตอนขอตามระบบเดิม)
+          // aggregateOutboundItems รวม SKU ซ้ำแล้ว — ตรวจยอดรวมจริง ไม่ใช่ตรวจซ้ำทีละบรรทัด
+          // จากนั้นยืนยันว่ามีสินค้า + ยังใช้งาน + สต็อกพอ (เช็คตอนขอตามระบบเดิม)
           const lines = [];
-          for (const item of items) {
-            const itemId = trimmedId(item.productId || item.sku);
-            const reqQty = toPositiveInteger(item.quantity);
-            if (!itemId || !reqQty) throw new ValidationError('จำนวนเบิกไม่ถูกต้อง');
-
+          for (const { itemId, reqQty } of preparedItems.lines) {
             const product = await tx.item.findFirst({
               where: { item_id: itemId, is_active: true },
               select: { item_id: true }
@@ -156,7 +161,7 @@ export const createOutboundRequest = async (req, res) => {
     await tryLogAudit(actorId, 'transaction.request_outbound', 'document', created.id, {
       docNo: created.docNo,
       project: trimmedProject,
-      itemCount: items.length
+      itemCount: preparedItems.lines.length
     });
     broadcast('transactions'); // ใบใหม่ PENDING ยังไม่แตะยอด — ไม่ต้องยิง products
     res.status(201).json({ success: true, message: 'ส่งคำขอเบิกแบบชุดสำเร็จ', transactionId: created.docNo });

@@ -33,6 +33,38 @@ export const DOCUMENT_INCLUDE = {
 export const docTypeToTxType = (docType) => (docType === 'RECEIVE' ? 'INBOUND' : 'OUTBOUND');
 
 // ---------------------------------------------------------------------------
+// เตรียมรายการใบเบิกจาก client: ตรวจรูปทรง + รวม SKU ซ้ำก่อน controller เช็คสต็อก
+// UI ปกติไม่สร้าง SKU ซ้ำ แต่ API ต้องคุมกติกาเอง — ไม่เช่นนั้น A=8 + A=8 จะผ่านการ
+// เช็คทีละบรรทัดเมื่อสต็อกมี 10 แล้วสร้างคำขอรวม 16 ได้
+// คืนลำดับตามครั้งแรกที่พบ SKU เพื่อให้รายการในใบยังเรียงเหมือนที่ผู้ใช้ส่งมา
+// ---------------------------------------------------------------------------
+export const aggregateOutboundItems = (items) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { ok: false, error: 'ไม่มีรายการสินค้า' };
+  }
+
+  const quantitiesByItem = new Map();
+  for (const item of items) {
+    const itemId = String(item?.productId || item?.sku || '').trim();
+    const reqQty = Number(item?.quantity);
+    if (!itemId || !Number.isInteger(reqQty) || reqQty <= 0) {
+      return { ok: false, error: 'จำนวนเบิกไม่ถูกต้อง' };
+    }
+
+    const combinedQty = (quantitiesByItem.get(itemId) ?? 0) + reqQty;
+    if (!Number.isSafeInteger(combinedQty)) {
+      return { ok: false, error: 'จำนวนเบิกไม่ถูกต้อง' };
+    }
+    quantitiesByItem.set(itemId, combinedQty);
+  }
+
+  return {
+    ok: true,
+    lines: [...quantitiesByItem].map(([itemId, reqQty]) => ({ itemId, reqQty }))
+  };
+};
+
+// ---------------------------------------------------------------------------
 // สถานะใบ: 3 ค่าของฐานใหม่ → 5 ค่าที่หน้าเว็บเดิมใช้ (คำนวณตอนแสดงผล ไม่เก็บใน DB)
 // ป้าย "ยกเลิก" vs "ปฏิเสธ" แยกด้วย resolved_by เทียบ requested_by (DATABASE.md ข้อ 6.3):
 //   ผู้ขอถอนเอง (resolved_by == requested_by) = ยกเลิก (Cancelled)

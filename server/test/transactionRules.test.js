@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  aggregateOutboundItems,
   canMarkPickedUp,
   docTypeToTxType,
   deriveDocStatus,
@@ -15,6 +16,30 @@ import {
   parseIsoDate,
   buildTransactionWhere
 } from '../utils/transactionRules.js';
+
+// ---------------------------------------------------------------------------
+// aggregateOutboundItems — server ต้องรวม SKU ซ้ำก่อนตรวจสต็อก ห้ามเชื่อว่า UI จะกันให้เสมอ
+// ---------------------------------------------------------------------------
+test('aggregateOutboundItems: รวม SKU ซ้ำก่อนเช็คสต็อก และคงลำดับครั้งแรกที่พบ', () => {
+  assert.deepEqual(aggregateOutboundItems([
+    { productId: '01001', quantity: 8 },
+    { sku: '02001', quantity: 2 },
+    { sku: '01001', quantity: 8 }
+  ]), {
+    ok: true,
+    lines: [
+      { itemId: '01001', reqQty: 16 },
+      { itemId: '02001', reqQty: 2 }
+    ]
+  });
+});
+
+test('aggregateOutboundItems: ปฏิเสธลิสต์ว่าง/รหัสว่าง/จำนวนไม่ถูกต้อง', () => {
+  assert.deepEqual(aggregateOutboundItems([]), { ok: false, error: 'ไม่มีรายการสินค้า' });
+  assert.equal(aggregateOutboundItems([{ sku: '', quantity: 1 }]).ok, false);
+  assert.equal(aggregateOutboundItems([{ sku: '01001', quantity: 0 }]).ok, false);
+  assert.equal(aggregateOutboundItems([{ sku: '01001', quantity: 1.5 }]).ok, false);
+});
 
 // ---------------------------------------------------------------------------
 // enum ชนิดใบ: RECEIVE→INBOUND, ISSUE→OUTBOUND (หน้าเว็บกรอง/แสดงด้วยค่าเดิม)
