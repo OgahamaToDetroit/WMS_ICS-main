@@ -29,9 +29,11 @@ export const fetchApi = async (endpoint, options = {}) => {
     if (!response.ok) {
       // 1. พยายามดึงข้อความ Error จริงๆ จาก Backend ออกมา
       let errorMessage = `พบข้อผิดพลาดจากเซิร์ฟเวอร์ (${response.status})`;
+      let errorCode = null;
       try {
         const errorData = await response.json();
         if (errorData.message) errorMessage = errorData.message;
+        if (errorData.code) errorCode = errorData.code;
       } catch {
         // กรณี Backend ไม่ได้ส่ง JSON กลับมา
       }
@@ -41,10 +43,11 @@ export const fetchApi = async (endpoint, options = {}) => {
 
       // 3. จัดการ Error แบบแยกประเภท
       if ((response.status === 401 || response.status === 403) && !isAuthRoute) {
-        // กรณีใช้งานอยู่แล้ว Token หมดอายุจริงๆ (ไม่ใช่ตอน Login)
-        toast.error('สิทธิ์การเข้าถึงมีปัญหา หรือ Token หมดอายุ กรุณาล็อกอินใหม่');
+        // ถูก login จากอุปกรณ์อื่น (1 บัญชี = 1 อุปกรณ์) แสดงข้อความเฉพาะจาก server ให้ชัด
+        const sessionReplaced = errorCode === 'SESSION_REPLACED';
+        toast.error(sessionReplaced ? errorMessage : 'สิทธิ์การเข้าถึงมีปัญหา หรือ Token หมดอายุ กรุณาล็อกอินใหม่');
         sessionStorage.removeItem('token');
-        sessionStorage.removeItem('currentUser'); 
+        sessionStorage.removeItem('currentUser');
         setTimeout(() => {
             window.location.href = '/login';
         }, 1500);
