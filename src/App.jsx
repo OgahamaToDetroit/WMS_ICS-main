@@ -13,7 +13,7 @@ import ResetPasswordPage from './components/ResetPassword';
 import Inventory from './components/Inventory';
 import Products from './components/Products';
 import UserManagement from './components/UserManagement';
-// InstallPrompt (ชวนติดตั้ง PWA) เป็นของเฟส 3C — ใส่กลับพร้อมชุด public/ + SW
+import InstallPrompt from './components/InstallPrompt';
 import WelcomeTips from './components/WelcomeTips';
 import { ConfirmHost } from './utils/confirm';
 import { AuthContext } from './AuthContext';
@@ -69,6 +69,7 @@ export default function App() {
     <AuthContext.Provider value={{ isAuthenticated, setIsAuthenticated }}>
       {/* เลื่อน toast ลงมาให้พ้น navbar (สูง ~64px) จะได้ไม่บังเมนู/กระดิ่งแจ้งเตือน */}
       <Toaster position="top-right" reverseOrder={false} containerStyle={{ top: 76 }} toastOptions={{ className: 'text-sm font-medium rounded-xl shadow-lg' }} />
+      <InstallPrompt />
       <ConfirmHost />
       {isAuthenticated && <WelcomeTips />}
       {/* พื้นหลังจริงเป็น gradient ที่ body (index.css) — wrapper ต้องโปร่งใสให้เห็น */}
