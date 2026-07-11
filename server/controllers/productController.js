@@ -318,6 +318,33 @@ export const deleteProduct = async (req, res) => {
   }
 };
 
+// คืนสถานะสินค้าที่ถูกปิดใช้งาน (Admin เท่านั้น — เท่ากับสิทธิ์ปิดใช้งาน) — idempotent:
+// active อยู่แล้วก็ตอบ success เฉยๆ ไม่ log ซ้ำ (updateMany เงื่อนไข is_active:false กันสองแท็บกดพร้อมกัน
+// แบบเดียวกับ markPickedUp) ไม่มีปุ่ม "ลบถาวร" คู่กัน — soft delete ของเราออกแบบให้ restore กลับได้เสมอ
+export const restoreProduct = async (req, res) => {
+  try {
+    const itemId = trimmedId(req.params.id);
+    const existing = await prisma.item.findUnique({ where: { item_id: itemId }, select: { item_id: true } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'ไม่พบสินค้า' });
+    }
+
+    const updated = await prisma.item.updateMany({
+      where: { item_id: itemId, is_active: false },
+      data: { is_active: true }
+    });
+    if (updated.count > 0) {
+      await tryLogAudit(req.user?.id, 'product.restore', 'product', itemId);
+      broadcast('products');
+    }
+
+    return res.json({ success: true, message: 'คืนสถานะสินค้าเรียบร้อย' });
+  } catch (error) {
+    console.error('restoreProduct Error:', error);
+    return res.status(500).json({ success: false, message: 'Database error' });
+  }
+};
+
 // bulkImportProducts ถูกถอดออกตามการตัดสินใจข้อ 11 — ช่องนำเข้าที่รับรหัสจากไฟล์ตรงๆ
 // คือประตูหลังเลี่ยงระบบออกรหัสตามกลุ่ม (โค้ดเดิมดูได้จาก git history ถ้ามีเหตุต้องฟื้น)
 

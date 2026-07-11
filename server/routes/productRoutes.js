@@ -5,6 +5,7 @@ import {
   getDashboardStats,
   getProductGroups,
   getProducts,
+  restoreProduct,
   updateProduct
 } from '../controllers/productController.js';
 import { authorizeRoles, verifyAuth } from '../middleware/authMiddleware.js';
@@ -16,6 +17,7 @@ router.get('/product-groups', verifyAuth, getProductGroups);
 router.post('/products', verifyAuth, authorizeRoles('Admin', 'Manager'), createProduct);
 router.put('/products/:id', verifyAuth, authorizeRoles('Admin', 'Manager'), updateProduct);
 router.delete('/products/:id', verifyAuth, authorizeRoles('Admin'), deleteProduct);
+router.put('/products/:id/restore', verifyAuth, authorizeRoles('Admin'), restoreProduct);
 // POST /products/import ถูกพักตามการตัดสินใจข้อ 11 — ประตูหลังเลี่ยงระบบออกรหัสตามกลุ่ม
 router.get('/wms/dashboard-stats', verifyAuth, getDashboardStats);
 
