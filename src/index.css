@@ -173,7 +173,13 @@ button, .btn, a, label, [role="button"], input[type="checkbox"], input[type="rad
 /* เพิ่ม Animation สำหรับ WMS */
 @layer utilities {
   .animate-fade-in {
-    animation: fadeIn 0.4s ease-out forwards;
+    /* ห้ามใส่ forwards: มันทำให้ transform ของเฟรมสุดท้ายค้างถาวร แล้ว element ที่มี transform
+       จะกลายเป็นกรอบอ้างอิงของลูกที่เป็น position:fixed (กฎ CSS containing block) —
+       modal ที่ควรกลางจอเลยหลุดไปกลางความสูงของ "ทั้งหน้า" (มองไม่เห็นเมื่อหน้ายาวหลายหมื่น px)
+       ไม่ใส่ fill mode = จบ animation แล้ว transform หายไปเอง ผลลัพธ์ภาพเหมือนเดิมทุกอย่าง
+       (เคยแก้ไปแล้วรอบ commit df3e2d7 แต่กลับมาตอนเฟส 3A copy index.css ทับจาก reference —
+       ระวังจุดนี้ทุกครั้งที่ copy ไฟล์นี้จาก reference ซ้ำ) */
+    animation: fadeIn 0.4s ease-out;
   }
 }
 
