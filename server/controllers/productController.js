@@ -17,6 +17,7 @@ import {
   buildNextItemId,
   buildStockMap,
   countLowStock,
+  listLowStockIds,
   localDayRange,
   mapItemToProduct,
   parseCost,
@@ -51,6 +52,27 @@ export const getProducts = async (req, res) => {
           }
         : {})
     };
+
+    // ?lowStock=true — กรอง "สต็อกต่ำ" ที่ฝั่ง server (การ์ดบน Dashboard ลิงก์มาที่โหมดนี้)
+    // ยอดคงเหลือไม่มีคอลัมน์เก็บ จึง WHERE ตรงๆ ใน SQL ไม่ได้ — ต้องคำนวณก่อนแล้วค่อยกรองด้วย
+    // รายชื่อรหัส: สแกนเฉพาะตัวที่ตั้ง min_stock แล้ว (ตัวที่ NULL ไม่มีทางเป็น Low Stock ตามข้อ 6.8)
+    // แล้วใช้กติกา listLowStockIds ตัวเดียวกับที่ dashboard ใช้นับ — เลขการ์ดกับรายการนี้จึงตรงกันเสมอ
+    // groupBy กรองผ่าน relation (ไม่ยัด IN-list ยาวๆ) กันชน parameter limit ของ SQLite (P2029)
+    if (req.query.lowStock === 'true') {
+      const flaggedItems = await prisma.item.findMany({
+        where: { is_active: true, min_stock: { not: null } },
+        select: { item_id: true, min_stock: true }
+      });
+      const flaggedSums = flaggedItems.length === 0
+        ? []
+        : await prisma.stockTransaction.groupBy({
+            by: ['item_id'],
+            where: { item: { is_active: true, min_stock: { not: null } } },
+            _sum: { qty_change: true }
+          });
+      // IN-list ตรงนี้ปลอดภัย: เหลือเฉพาะตัวที่ Low Stock จริง ซึ่งมีจำนวนน้อยตามธรรมชาติ
+      where.item_id = { in: listLowStockIds(flaggedItems, buildStockMap(flaggedSums)) };
+    }
 
     const totalItems = await prisma.item.count({ where });
     const items = await prisma.item.findMany({

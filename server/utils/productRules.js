@@ -40,10 +40,16 @@ export const buildStockMap = (groupedSums) =>
 
 export const stockOf = (stockMap, itemId) => stockMap.get(itemId) ?? 0;
 
-// นับสินค้าที่ Low Stock — ใช้กติกาเดียวกับ computeStatus (ห้าม default min_stock=NULL เป็น 10)
-// สำหรับ getDashboardStats: items คือ [{item_id, min_stock}], stockMap มาจาก buildStockMap
-export const countLowStock = (items, stockMap) =>
-  items.filter((item) => computeStatus(stockOf(stockMap, item.item_id), item.min_stock) === 'Low Stock').length;
+// รายชื่อรหัสสินค้าที่ Low Stock — ใช้กติกาเดียวกับ computeStatus (ห้าม default min_stock=NULL เป็น 10)
+// items คือ [{item_id, min_stock}], stockMap มาจาก buildStockMap
+// ใช้ 2 ที่: นับบน dashboard (countLowStock) + กรอง ?lowStock=true ที่ getProducts —
+// ต้องเป็นฟังก์ชันเดียวกัน ไม่งั้นเลขบนการ์ดกับรายการที่คลิกเข้าไปดูจะไม่ตรงกันสักวัน
+export const listLowStockIds = (items, stockMap) =>
+  items
+    .filter((item) => computeStatus(stockOf(stockMap, item.item_id), item.min_stock) === 'Low Stock')
+    .map((item) => item.item_id);
+
+export const countLowStock = (items, stockMap) => listLowStockIds(items, stockMap).length;
 
 // ---------------------------------------------------------------------------
 // ช่วงเวลา "วันนี้" ตามเวลาท้องถิ่นของเครื่อง server — ใช้กรอง transaction_date

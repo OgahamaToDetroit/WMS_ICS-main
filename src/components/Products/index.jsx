@@ -82,6 +82,8 @@ export default function Products() {
       if (searchTerm.trim()) query.set('search', searchTerm.trim());
       if (groupFilter) query.set('group', groupFilter);
       if (showInactive) query.set('includeInactive', 'true');
+      // โหมดสต็อกต่ำต้องให้ server กรอง — กรองเองฝั่งนี้เห็นแค่ 500 ตัวแรก ตัวที่ต่ำจริงอาจอยู่นอกนั้น
+      if (lowStockOnly) query.set('lowStock', 'true');
       const json = await fetchApi(`/api/products?${query.toString()}`);
       if (json.success) setProducts(json.products);
     } catch (err) {
@@ -89,7 +91,7 @@ export default function Products() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [searchTerm, groupFilter, showInactive]);
+  }, [searchTerm, groupFilter, showInactive, lowStockOnly]);
 
   useEffect(() => {
     fetchApi('/api/product-groups')
