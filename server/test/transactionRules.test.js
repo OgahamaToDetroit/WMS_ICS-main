@@ -11,7 +11,9 @@ import {
   mapRequestItem,
   mapReceiveItem,
   mapDocumentToTransaction,
-  resolveOutcome
+  resolveOutcome,
+  parseIsoDate,
+  buildTransactionWhere
 } from '../utils/transactionRules.js';
 
 // ---------------------------------------------------------------------------
@@ -303,4 +305,92 @@ test('mapDocumentToTransaction: ทรง JSON มี pickedUpAt — NULL คง
   assert.equal(mapDocumentToTransaction({ ...base, picked_up_at: null }).pickedUpAt, null);
   const pickedUp = new Date('2026-07-10T05:00:00Z');
   assert.equal(mapDocumentToTransaction({ ...base, picked_up_at: pickedUp }).pickedUpAt, pickedUp);
+});
+
+// ---------------------------------------------------------------------------
+// parseIsoDate — ห้ามปล่อย Invalid Date เข้า Prisma where (จะ throw ตอน query จริง)
+// ---------------------------------------------------------------------------
+test('parseIsoDate: ISO ถูกต้อง → Date ตรงค่า', () => {
+  const d = parseIsoDate('2026-07-11T00:00:00.000Z');
+  assert.equal(d.toISOString(), '2026-07-11T00:00:00.000Z');
+});
+
+test('parseIsoDate: ว่าง/null/เพี้ยน → null', () => {
+  assert.equal(parseIsoDate(''), null);
+  assert.equal(parseIsoDate(null), null);
+  assert.equal(parseIsoDate(undefined), null);
+  assert.equal(parseIsoDate('abc'), null);
+});
+
+// ---------------------------------------------------------------------------
+// buildTransactionWhere — สเปคพอร์ตจาก reference getFullTransactions (DATABASE.md ข้อ 6.17)
+// ---------------------------------------------------------------------------
+const ACTIVE_WHERE = {
+  OR: [{ status: 'PENDING' }, { doc_type: 'ISSUE', status: 'CONFIRMED', picked_up_at: null }]
+};
+
+test('buildTransactionWhere: ไม่มี query เลย → {} (ไม่กรอง = พฤติกรรมเดิม)', () => {
+  assert.deepEqual(buildTransactionWhere({}), {});
+  assert.deepEqual(buildTransactionWhere(), {});
+});
+
+test('buildTransactionWhere: view=active → ใบค้าง (PENDING หรือ ISSUE+CONFIRMED+ยังไม่ส่งมอบ)', () => {
+  assert.deepEqual(buildTransactionWhere({ view: 'active' }), ACTIVE_WHERE);
+});
+
+test('buildTransactionWhere: view=dashboard เท่ากับ view=active', () => {
+  assert.deepEqual(buildTransactionWhere({ view: 'dashboard' }), ACTIVE_WHERE);
+});
+
+test('buildTransactionWhere: view ค่าขยะ → {} (ไม่ตีความเป็น active)', () => {
+  assert.deepEqual(buildTransactionWhere({ view: 'all' }), {});
+});
+
+test('buildTransactionWhere: since อย่างเดียว → TIME มีแค่ gte ทั้งสองก้อน', () => {
+  const since = '2026-07-01T00:00:00.000Z';
+  const where = buildTransactionWhere({ since });
+  assert.deepEqual(where, {
+    OR: [
+      { resolved_at: { gte: new Date(since) } },
+      { resolved_at: null, created_at: { gte: new Date(since) } }
+    ]
+  });
+});
+
+test('buildTransactionWhere: until อย่างเดียว → TIME มีแค่ lt ทั้งสองก้อน', () => {
+  const until = '2026-08-01T00:00:00.000Z';
+  const where = buildTransactionWhere({ until });
+  assert.deepEqual(where, {
+    OR: [
+      { resolved_at: { lt: new Date(until) } },
+      { resolved_at: null, created_at: { lt: new Date(until) } }
+    ]
+  });
+});
+
+test('buildTransactionWhere: since+until → ครบทั้ง gte และ lt', () => {
+  const since = '2026-07-01T00:00:00.000Z';
+  const until = '2026-08-01T00:00:00.000Z';
+  const where = buildTransactionWhere({ since, until });
+  assert.deepEqual(where, {
+    OR: [
+      { resolved_at: { gte: new Date(since), lt: new Date(until) } },
+      { resolved_at: null, created_at: { gte: new Date(since), lt: new Date(until) } }
+    ]
+  });
+});
+
+test('buildTransactionWhere: view=active + since → {OR:[ACTIVE,TIME]} (ใบค้างไม่โดนช่วงเวลาตัด)', () => {
+  const since = '2026-07-01T00:00:00.000Z';
+  const where = buildTransactionWhere({ view: 'active', since });
+  assert.deepEqual(where, {
+    OR: [
+      ACTIVE_WHERE,
+      { OR: [{ resolved_at: { gte: new Date(since) } }, { resolved_at: null, created_at: { gte: new Date(since) } }] }
+    ]
+  });
+});
+
+test('buildTransactionWhere: since เป็น string เพี้ยน → เหมือนไม่ได้ส่ง (กัน Prisma throw)', () => {
+  assert.deepEqual(buildTransactionWhere({ since: 'abc' }), {});
 });

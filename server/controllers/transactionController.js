@@ -11,7 +11,7 @@ import { tryLogAudit } from '../utils/audit.js';
 import { broadcast } from '../events.js';
 import { sendPushToUser } from '../push.js';
 import { buildResolvePush } from '../utils/pushRules.js';
-import { DOCUMENT_INCLUDE, canMarkPickedUp, mapDocumentToTransaction, resolveOutcome } from '../utils/transactionRules.js';
+import { DOCUMENT_INCLUDE, canMarkPickedUp, mapDocumentToTransaction, resolveOutcome, buildTransactionWhere } from '../utils/transactionRules.js';
 import { buildDocNoPrefix, buildNextDocNo, parseMinStock } from '../utils/productRules.js';
 
 const CODE_RETRY_LIMIT = 3; // ชน doc_no ซ้ำ (P2002) แล้ววนออกเลขใหม่ ไม่ล้มทั้งคำขอ
@@ -59,19 +59,16 @@ const handleError = (res, err) => {
   res.status(statusCode).json({ success: false, message: statusCode === 500 ? 'Database error' : err.message });
 };
 
-// เห็นทุกใบถ้าเป็น Admin/Manager · ผู้ขอ (Operator) เห็นเฉพาะใบของตัวเอง (แบบเดียวกับระบบเดิม)
-const visibleTo = (transactions, user) => {
-  if (['Admin', 'Manager'].includes(user.role)) return transactions;
-  return transactions.filter((t) => t.requesterUsername === user.username);
-};
-
+// การมองเห็น = ทุก role เห็นทุกใบ (ตาม reference — DATABASE.md ข้อ 6.17) การกระทำยังการ์ดด้วย
+// role ที่ route/controller แต่ละจุดเหมือนเดิมทั้งหมด (resolve/pickup = Admin/Manager, cancel ตามกติกาเดิม)
 export const getTransactions = async (req, res) => {
   try {
     const docs = await prisma.stockDocument.findMany({
+      where: buildTransactionWhere(req.query),
       include: DOCUMENT_INCLUDE,
       orderBy: { created_at: 'desc' }
     });
-    const transactions = visibleTo(docs.map(mapDocumentToTransaction), req.user);
+    const transactions = docs.map(mapDocumentToTransaction);
     res.json({ success: true, transactions });
   } catch (err) {
     handleError(res, err);
@@ -84,7 +81,7 @@ export const getHistory = async (req, res) => {
       include: DOCUMENT_INCLUDE,
       orderBy: { created_at: 'desc' }
     });
-    const transactions = visibleTo(docs.map(mapDocumentToTransaction), req.user);
+    const transactions = docs.map(mapDocumentToTransaction);
     const history = transactions.filter((t) => t.status !== 'Pending');
     res.json({ success: true, history });
   } catch (err) {

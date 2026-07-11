@@ -145,6 +145,51 @@ export const canMarkPickedUp = (doc) => {
 };
 
 // ---------------------------------------------------------------------------
+// ตัวกรอง GET /transactions: ?view=active|dashboard · ?since= · ?until= (สเปคพอร์ตจาก
+// wms-ics-reference getFullTransactions — DATABASE.md ข้อ 6.17) แปลงเป็น Prisma where object
+// บนฐาน 3-สถานะของเรา (reference เก็บสถานะ 5 ค่าตรงๆ เราต้อง derive คืนเป็นเงื่อนไขฐานเอง)
+// pure ล้วน — controller เอาไปใส่ findMany({ where }) ตรงๆ
+// ---------------------------------------------------------------------------
+
+// ISO string → Date | null (ว่าง/พาร์สไม่ผ่าน = null = "ไม่ได้กรองด้วยค่านี้" — ห้ามปล่อย
+// Invalid Date เข้า Prisma where เพราะจะ throw ตอน query จริง)
+export const parseIsoDate = (raw) => {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+// ใบค้าง = PENDING ทุก doc_type (รออนุมัติ) OR ใบเบิกที่ยืนยันแล้วแต่ยังไม่ส่งมอบ
+// (reference: status IN Approved/Partial — ฝั่งเราทั้งสองค่าคือ CONFIRMED เดียวกัน)
+const buildActiveWhere = () => ({
+  OR: [{ status: 'PENDING' }, { doc_type: 'ISSUE', status: 'CONFIRMED', picked_up_at: null }]
+});
+
+// since/until เทียบ COALESCE(resolved_at, created_at) ตาม reference — Prisma ไม่มี COALESCE ใน
+// where จึงกางเป็น OR สองก้อน: ใบที่ปิดแล้วดู resolved_at, ใบที่ยังไม่ปิด (resolved_at NULL) ดู created_at
+const buildTimeWhere = (sinceDate, untilDate) => {
+  const range = {};
+  if (sinceDate) range.gte = sinceDate;
+  if (untilDate) range.lt = untilDate;
+  return { OR: [{ resolved_at: range }, { resolved_at: null, created_at: range }] };
+};
+
+export const buildTransactionWhere = ({ view, since, until } = {}) => {
+  const isActive = view === 'active' || view === 'dashboard';
+  const sinceDate = parseIsoDate(since);
+  const untilDate = parseIsoDate(until);
+  const hasTime = sinceDate != null || untilDate != null;
+
+  const activeWhere = isActive ? buildActiveWhere() : null;
+  const timeWhere = hasTime ? buildTimeWhere(sinceDate, untilDate) : null;
+
+  if (activeWhere && timeWhere) return { OR: [activeWhere, timeWhere] };
+  if (activeWhere) return activeWhere;
+  if (timeWhere) return timeWhere;
+  return {}; // ไม่มี query เลย = ไม่กรอง (พฤติกรรมเดิมก่อนเพิ่ม query support)
+};
+
+// ---------------------------------------------------------------------------
 // ฝั่งรับค่าเข้า: ประมวลผลการอนุมัติ/ปฏิเสธใบ ISSUE (การตัดสินใจที่ database บังคับเองไม่ได้)
 // pure ล้วน — controller หา currentStock จริงจาก DB มาป้อนให้ (I/O อยู่ที่ controller)
 // รับ:  action 'APPROVE'|'REJECT', message, lines: [{ itemId, sku, qtyRequested, qtyApproved, currentStock }]

@@ -181,3 +181,18 @@
     resolve แจ้งผลผู้ขอ แบบไม่ await + `.catch` ทิ้ง (push ช้า/ล่มต้องไม่กระทบ response ที่เขียนฐาน
     สำเร็จแล้ว) · กติกาแยกเทสต์ `utils/pushRules.js`: ป้ายผลคำนวณจากตัวเลขจริง + เกณฑ์อุปกรณ์ตาย
     410/404 เท่านั้น (รหัสอื่น = ชั่วคราว ห้ามลบ) · VAPID ของเครื่องนี้สร้างใหม่แล้ว ไม่ใช้ของ reference
+
+เพิ่มเติม 11 ก.ค. 2026 — เคาะระหว่างทำเฟส 3B (ยกหน้าบ้าน Homepage/Products/Inventory/UserManagement):
+
+17. **การมองเห็นใบเบิก (`GET /api/transactions`): เปลี่ยนจาก "เห็นเฉพาะใบตัวเอง" เป็น "ทุก role เห็นทุกใบ"
+    ตาม reference** — ถอดฟังก์ชัน `visibleTo` (เดิมกรอง Operator ให้เห็นเฉพาะ `requesterUsername` ของตัวเอง)
+    ออกจาก `transactionController.getTransactions`/`getHistory` เหตุผล: Homepage เวอร์ชันใหม่ (คิวรออนุมัติ
+    + รอส่งมอบส่วนรวม) ออกแบบบนสมมติฐานว่าทุกคนเห็นภาพรวมคลังเดียวกัน ตัดสิทธิ์มองเห็นออกจากตัดสิทธิ์กระทำ
+    ชัดเจน — **การมองเห็น = ทุกคนเท่ากัน, การกระทำ (อนุมัติ/ปฏิเสธ/ส่งมอบ/ยกเลิก) ยังการ์ดด้วย role เดิม
+    ทุกจุด** (resolve/pickup = Admin/Manager เท่านั้น, cancel = เจ้าของใบตอน PENDING หรือ Admin/Manager)
+    ไม่กระทบ audit trail เพราะ `created_by`/`resolved_by`/`requested_by` ยังผูก user id เดิมทุกแถว
+    เพิ่มพร้อมกัน: `?view=active|dashboard`/`?since=`/`?until=` ที่ `GET /transactions` (สเปคพอร์ตจาก
+    `wms-ics-reference` `getFullTransactions`) — pure function `transactionRules.buildTransactionWhere`
+    (แยกเทสต์ได้) แปลง view=active/dashboard เป็นเงื่อนไข "ใบค้าง" (`PENDING` ทุกใบ หรือใบ ISSUE ที่
+    `CONFIRMED`+ยังไม่ส่งมอบ) และ since/until เทียบ `COALESCE(resolved_at, created_at)` แบบกางเป็น OR
+    (Prisma ไม่มี COALESCE ใน where)
