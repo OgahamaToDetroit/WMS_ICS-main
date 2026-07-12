@@ -59,7 +59,8 @@ role gate ของ reference หลวมกว่าของเรา — ห
 รันโปรเจกต์: `npm run dev:all` (หน้าเว็บ 5173 + เซิร์ฟเวอร์ 5000) — ครั้งแรกต้อง
 `npm install`, `npm --prefix server install`, สร้าง `server/.env` จาก `.env.example`,
 และ `npx prisma generate` ใน `server/` · **ฐานใหม่ที่ยังไม่มีบัญชี Admin** (เช่น หลัง reset):
-รัน `npm run create-admin` (upsert — รันซ้ำไม่เสียหาย แต่ไม่ใช่พิธีก่อนเปิดระบบทุกครั้ง)
+รัน `npm --prefix server run create-admin` (upsert — รันซ้ำไม่เสียหาย แต่ไม่ใช่พิธีก่อนเปิดระบบทุกครั้ง ·
+script นี้อยู่ใน `server/package.json` สั่ง `npm run create-admin` เฉยๆ จาก root จะ Missing script)
 
 ## 2. repo นี้ "เป็นเจ้าของ schema" ต่อจากนี้
 
