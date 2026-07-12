@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { isCameraScanDevice } from '../../utils/device';
-import { classifyScanResponse, hasExactScannedProduct, resolveProductQrScan } from '../../utils/productQrScan';
+import { isCameraScanDevice } from '../utils/device';
+import { classifyScanResponse, hasExactScannedProduct, resolveProductQrScan } from '../utils/productQrScan';
 
-// รวมวงจรรับ QR ของหน้า Products ไว้จุดเดียว เพื่อไม่ให้ component หลักที่มีหน้าที่หลายอย่างโตขึ้นอีก
-export const useProductQrScan = ({
+// วงจรสแกนป้ายเพื่อค้นหาสินค้าที่ใช้ร่วมกันใน Products และ Inventory
+export const useWarehouseProductScan = ({
   searchTerm,
   setSearchTerm,
   groupFilter,
   setGroupFilter,
-  lowStockOnly,
-  searchParams,
-  setSearchParams
+  lowStockOnly = false,
+  searchParams = null,
+  setSearchParams = null
 }) => {
   const [scanOpen, setScanOpen] = useState(false);
   const [scanArmed, setScanArmed] = useState(false);
@@ -67,7 +67,7 @@ export const useProductQrScan = ({
     setGroupFilter('');
     setScanVersion(nextScanVersion); // ทำให้ค้นหาใหม่ได้แม้สแกน QR เดิมซ้ำ
 
-    if (lowStockOnly) {
+    if (lowStockOnly && searchParams && setSearchParams) {
       const next = new URLSearchParams(searchParams);
       next.delete('filter');
       setSearchParams(next, { replace: true });

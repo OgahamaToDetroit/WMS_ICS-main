@@ -8,7 +8,7 @@ import { onServerEvent } from '../../utils/events';
 import BarcodeScanner from '../BarcodeScanner';
 import { confirmDialog } from '../../utils/confirm';
 import { ProductCardSkeleton } from '../Skeleton';
-import { useProductQrScan } from './useProductQrScan';
+import { useWarehouseProductScan } from '../../hooks/useWarehouseProductScan';
 
 // minStock ช่องว่าง = "ยังไม่ตั้งเกณฑ์" (NULL ในฐาน) — ถอนกับดัก || 10 ตาม DATABASE.md ข้อ 6.8
 const emptyInboundForm = {
@@ -65,7 +65,7 @@ export default function Products() {
     cancelArmedScan,
     completePendingScan,
     failPendingScan
-  } = useProductQrScan({
+  } = useWarehouseProductScan({
     searchTerm,
     setSearchTerm,
     groupFilter,

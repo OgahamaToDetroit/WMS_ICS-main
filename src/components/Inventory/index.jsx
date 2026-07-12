@@ -1,13 +1,13 @@
 // src/components/Inventory/index.jsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { fetchApi, getAssetUrl } from '../../utils/api';
 import { stockStatusLabel } from '../../utils/labels';
 import { onServerEvent } from '../../utils/events';
 import BarcodeScanner from '../BarcodeScanner';
-import { isCameraScanDevice } from '../../utils/device';
 import { ListSkeleton } from '../Skeleton';
 import toast from 'react-hot-toast';
+import { useWarehouseProductScan } from '../../hooks/useWarehouseProductScan';
 
 // ฟังก์ชันดึงรูปภาพ (ถ้าไม่มีรูปให้ใช้รูป SVG เปล่าๆ แทน เพื่อกันพัง)
 const getImg = (url) => {
@@ -26,18 +26,24 @@ export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState('');
   const [groups, setGroups] = useState([]);
   const [groupFilter, setGroupFilter] = useState('');
-  const [scanOpen, setScanOpen] = useState(false);
-  const searchInputRef = useRef(null);
-
-  // มือถือ → เปิดกล้อง / คอม → โฟกัสช่องค้นหาให้เครื่องสแกนบาร์โค้ดยิงลงไป (ทำงานเหมือนคีย์บอร์ด)
-  const handleScanClick = () => {
-    if (isCameraScanDevice()) {
-      setScanOpen(true);
-    } else {
-      searchInputRef.current?.focus();
-      toast('พร้อมสแกน — ยิงบาร์โค้ดด้วยเครื่องสแกนได้เลย', { icon: '🔎' });
-    }
-  };
+  const {
+    scanOpen,
+    closeScanner,
+    scanVersion,
+    searchInputRef,
+    handleScanClick,
+    handleProductScan,
+    handleSearchChange,
+    handleSearchKeyDown,
+    cancelArmedScan,
+    completePendingScan,
+    failPendingScan
+  } = useWarehouseProductScan({
+    searchTerm,
+    setSearchTerm,
+    groupFilter,
+    setGroupFilter
+  });
 
   // ระบบตะกร้าสินค้า
   const [cart, setCart] = useState([]);
@@ -53,13 +59,19 @@ export default function Inventory() {
       if (searchTerm.trim()) query.set('search', searchTerm.trim());
       if (groupFilter) query.set('group', groupFilter);
       const json = await fetchApi(`/api/products?${query.toString()}`);
-      if (json.success) setData(json.products);
+      if (json.success) {
+        setData(json.products);
+        completePendingScan(json.products, scanVersion);
+      } else {
+        failPendingScan(scanVersion);
+      }
     } catch (error) {
       console.warn('Failed to fetch products', error);
+      failPendingScan(scanVersion);
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [searchTerm, groupFilter]);
+  }, [searchTerm, groupFilter, scanVersion, completePendingScan, failPendingScan]);
 
   useEffect(() => {
     fetchApi('/api/product-groups')
@@ -166,7 +178,10 @@ export default function Inventory() {
               ref={searchInputRef}
               type="text" placeholder="🔍 ค้นหา รหัสสินค้า หรือ ชื่อ..."
               className="input input-sm input-bordered w-full bg-base-100"
-              value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+              value={searchTerm}
+              onChange={handleSearchChange}
+              onKeyDown={handleSearchKeyDown}
+              onBlur={cancelArmedScan}
             />
             <button type="button" onClick={handleScanClick} className="btn btn-sm btn-square btn-primary shrink-0" title="สแกนบาร์โค้ด/QR" aria-label="สแกนบาร์โค้ด">📷</button>
           </div>
@@ -313,12 +328,8 @@ export default function Inventory() {
 
       {scanOpen && (
         <BarcodeScanner
-          onClose={() => setScanOpen(false)}
-          onDetected={(code) => {
-            setSearchTerm(code);
-            setScanOpen(false);
-            toast.success(`สแกนได้: ${code}`);
-          }}
+          onClose={closeScanner}
+          onDetected={handleProductScan}
         />
       )}
     </div>
