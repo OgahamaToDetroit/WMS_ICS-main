@@ -163,7 +163,7 @@ async function main() {
 main();
 ```
 
-ค่าคาดหวังทุกตัวมาจากรายงานตรวจรับ [`etl/out/verify_report.md`](../etl/out/verify_report.md) ใน repo ต้นทาง (23 / 2,382 / 579 / ติดลบ 64 — เช็คข้อ 1 และ 3; ยอดรวมทั้งคลัง ณ ส่งมอบ = 3,016.85 — เช็คข้อ 2; `users`/`stock_documents`/`stock_request_items` = 0 ทั้งสาม — เช็คข้อ 8)
+ค่าคาดหวังทุกตัวมาจากรายงานตรวจรับ `etl/out/verify_report.md` ใน repo ต้นทาง (23 / 2,382 / 579 / ติดลบ 64 — เช็คข้อ 1 และ 3; ยอดรวมทั้งคลัง ณ ส่งมอบ = 3,016.85 — เช็คข้อ 2; `users`/`stock_documents`/`stock_request_items` = 0 ทั้งสาม — เช็คข้อ 8)
 
 **ขั้น 4 (ทางเลือก ไม่ต้องเขียนโค้ด):** `npx prisma studio` เปิด GUI ไล่ดูข้อมูลด้วยตา
 
