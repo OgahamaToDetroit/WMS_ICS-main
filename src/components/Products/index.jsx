@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { fetchApi, getAssetUrl } from '../../utils/api';
@@ -6,9 +6,9 @@ import { toCsv } from '../../utils/csv';
 import { stockStatusLabel } from '../../utils/labels';
 import { onServerEvent } from '../../utils/events';
 import BarcodeScanner from '../BarcodeScanner';
-import { isCameraScanDevice } from '../../utils/device';
 import { confirmDialog } from '../../utils/confirm';
 import { ProductCardSkeleton } from '../Skeleton';
+import { useProductQrScan } from './useProductQrScan';
 
 // minStock ช่องว่าง = "ยังไม่ตั้งเกณฑ์" (NULL ในฐาน) — ถอนกับดัก || 10 ตาม DATABASE.md ข้อ 6.8
 const emptyInboundForm = {
@@ -50,21 +50,30 @@ export default function Products() {
   const [groupFilter, setGroupFilter] = useState('');
   // มุมมอง "ที่ปิดใช้งาน" — แสดงเฉพาะสินค้าที่ถูก archive ไว้ สำหรับคืนสถานะ
   const [showInactive, setShowInactive] = useState(false);
-  const [scanOpen, setScanOpen] = useState(false);
-  const searchInputRef = useRef(null);
-
-  // มือถือ → เปิดกล้อง / คอม → โฟกัสช่องค้นหาให้เครื่องสแกนบาร์โค้ดยิงลงไป (ทำงานเหมือนคีย์บอร์ด)
-  const handleScanClick = () => {
-    if (isCameraScanDevice()) {
-      setScanOpen(true);
-    } else {
-      searchInputRef.current?.focus();
-      toast('พร้อมสแกน — ยิงบาร์โค้ดด้วยเครื่องสแกนได้เลย', { icon: '🔎' });
-    }
-  };
   // filter=low ใน URL = โหมดแสดงเฉพาะสต็อกต่ำ (การ์ด Low Stock บน Dashboard ลิงก์มาที่นี่)
   const [searchParams, setSearchParams] = useSearchParams();
   const lowStockOnly = searchParams.get('filter') === 'low';
+  const {
+    scanOpen,
+    closeScanner,
+    scanVersion,
+    searchInputRef,
+    handleScanClick,
+    handleProductScan,
+    handleSearchChange,
+    handleSearchKeyDown,
+    cancelArmedScan,
+    completePendingScan,
+    failPendingScan
+  } = useProductQrScan({
+    searchTerm,
+    setSearchTerm,
+    groupFilter,
+    setGroupFilter,
+    lowStockOnly,
+    searchParams,
+    setSearchParams
+  });
   const [inboundModal, setInboundModal] = useState(false);
   const [inboundForm, setInboundForm] = useState(emptyInboundForm);
   const [productModal, setProductModal] = useState(false);
@@ -85,13 +94,19 @@ export default function Products() {
       // โหมดสต็อกต่ำต้องให้ server กรอง — กรองเองฝั่งนี้เห็นแค่ 500 ตัวแรก ตัวที่ต่ำจริงอาจอยู่นอกนั้น
       if (lowStockOnly) query.set('lowStock', 'true');
       const json = await fetchApi(`/api/products?${query.toString()}`);
-      if (json.success) setProducts(json.products);
+      if (json.success) {
+        setProducts(json.products);
+        completePendingScan(json.products, scanVersion);
+      } else {
+        failPendingScan(scanVersion);
+      }
     } catch (err) {
       console.error('Fetch products error:', err);
+      failPendingScan(scanVersion);
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [searchTerm, groupFilter, showInactive, lowStockOnly]);
+  }, [searchTerm, groupFilter, showInactive, lowStockOnly, scanVersion, completePendingScan, failPendingScan]);
 
   useEffect(() => {
     fetchApi('/api/product-groups')
@@ -332,7 +347,9 @@ export default function Products() {
             className="input input-bordered input-sm w-full"
             placeholder="ค้นหา รหัสสินค้า, ชื่อ, ผู้ขาย..."
             value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
+            onChange={handleSearchChange}
+            onKeyDown={handleSearchKeyDown}
+            onBlur={cancelArmedScan}
           />
           <button type="button" onClick={handleScanClick} className="btn btn-sm btn-square btn-primary shrink-0" title="สแกนบาร์โค้ด/QR" aria-label="สแกนบาร์โค้ด">📷</button>
         </div>
@@ -517,12 +534,8 @@ export default function Products() {
 
       {scanOpen && (
         <BarcodeScanner
-          onClose={() => setScanOpen(false)}
-          onDetected={(code) => {
-            setSearchTerm(code);
-            setScanOpen(false);
-            toast.success(`สแกนได้: ${code}`);
-          }}
+          onClose={closeScanner}
+          onDetected={handleProductScan}
         />
       )}
     </div>
