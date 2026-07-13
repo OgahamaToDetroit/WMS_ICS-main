@@ -30,6 +30,7 @@
 ```bash
 npm install                          # ติดตั้งฝั่งหน้าเว็บ (ครั้งแรก)
 npm --prefix server install          # ติดตั้งฝั่งเซิร์ฟเวอร์ (ครั้งแรก)
+node .\node_modules\prisma\build\index.js migrate deploy
 cp server/.env.example server/.env   # แล้วปรับค่าในไฟล์ (ครั้งแรก)
 ( cd server && npx prisma generate ) # สร้าง Prisma client (ครั้งแรก/หลังแก้ schema)
 npm run dev:all                      # รันหน้าเว็บ (5173) + เซิร์ฟเวอร์ (5000) พร้อมกัน
